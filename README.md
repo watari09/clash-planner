@@ -9,6 +9,8 @@ Webseite: Dorf-Export aus Clash of Clans einfügen →
 - Bauarbeiter-Zeit realistisch (ein Gebäude/Held nie doppelt gleichzeitig), Bauarbeiter-Anzahl und Goldpass (0/17/20 %) einstellbar, Filter nach Gebäudetyp und Labor-Art
 - Rush Fixer: was noch unter dem Maximum des vorherigen Rathauses liegt
 - Bücher: bester Einsatz von Buch des Kampfes/der Zauber/der Helden/des Bauens
+- 6. Bauarbeiter (B.O.B.): Stand der vier Aufgaben aus den Spieldaten und kürzester Weg dorthin (Gear-Ups, Nachtdorf-Truppe/-Verteidigung, Helden-Summe)
+- Erz-Rechner: glänzendes, glühendes und Sternenerz je Ausrüstung bis zum Maximum oder zur aktuellen Schmied-Stufe
 - Listen sortierbar (Restzeit, schnellste/günstigste nächste Stufe), fertige ein-/ausblendbar, Stufen jedes Exemplars, Mauern in 10er-Schritten planen
 - mehrere Dörfer, Rabatt (Goldpass/Season-Boost) einstellbar
 
@@ -23,6 +25,7 @@ npm test                         # Node ≥ 20, keine Abhängigkeiten
 
 - `src/village.js` – Auswertung des Exports, Fortschritt und Kalender-Erzeugung (ohne DOM, getestet)
 - `src/boosts.js` – Beschleuniger auf laufende Upgrades anwenden (ohne DOM, getestet)
+- `src/bob.js`, `src/ore.js`, `src/magic.js` – 6. Bauarbeiter, Erz-Rechner, Bücher (ohne DOM, getestet)
 - `src/planner.js` – Upgrade-Plan: Verteilung auf Bauarbeiter/Labore, Ressourcen-Zeitplan (ohne DOM, getestet)
 - `src/app.js` – Oberfläche
 - `data/game.json` – Namen, Stufen und Bauzeiten aller Spielobjekte

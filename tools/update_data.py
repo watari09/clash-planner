@@ -192,6 +192,41 @@ def boosts(sha: str) -> dict:
     }
 
 
+def gear_up(levels: list, first: dict, ids_by_name: dict):
+    """Gear-Up (Heimatdorf-Verteidigung umrüsten): ab welcher Stufe, Kosten, Dauer und
+    welches Nachtdorf-Gebäude auf welcher Stufe dafür nötig ist."""
+    target = first.get("GearUpBuilding")
+    if not target or target not in ids_by_name:
+        return None
+    for i, d in enumerate(levels):
+        if num(d.get("GearUpCost")) or num(d.get("GearUpTime")):
+            return {
+                "from": i + 1,
+                "cost": num(d.get("GearUpCost")),
+                "resource": d.get("GearUpResource") or first.get("GearUpResource") or "Gold",
+                "sec": num(d.get("GearUpTime")) * 60,
+                "requires": ids_by_name[target][0],
+                "requiresLevel": num(first.get("GearUpLevelRequirement")),
+            }
+    return None
+
+
+def equipment_info(levels: list, first: dict, items: dict) -> dict:
+    """Held, Seltenheit und Erz-Kosten je Stufe (Index i = Stufe i+1 erreichen; Zeile n = Kosten n→n+1)."""
+    def ore(d):
+        res = [r.strip() for r in (d.get("UpgradeResources") or "").split(";") if r.strip()]
+        amounts = [num(a) for a in (d.get("UpgradeCosts") or "").split(";") if a.strip()]
+        return dict(zip(res, amounts))
+    hero_name = (first.get("AllowedCharacters") or "").split(";")[0].strip()
+    hero = next((int(i) for i, it in items.items() if it["kind"] == "hero" and it["name"]["en"] == hero_name), None)
+    return {
+        "hero": hero,
+        "rarity": (first.get("Rarity") or "").lower(),
+        "deprecated": first.get("Deprecated") == "TRUE",
+        "ore": [{}] + [ore(levels[i - 1]) for i in range(1, len(levels))],
+    }
+
+
 def filter_group(kind: str, first: dict):
     """Untergruppe für Filter: Gebäude nach Klasse, Labor nach Truppe/Zauber/Belagerung."""
     if kind == "building":
@@ -232,6 +267,18 @@ def unlock_hall(kind: str, first: dict, ids_by_name: dict, items: dict):
     return None
 
 
+def bob_tasks(sha: str, ids_by_name: dict) -> dict:
+    """Aufgaben für B.O.B.s Zentrale (6. Bauarbeiter im Heimatdorf) aus upgrade_tasks.csv."""
+    r = list(csv.reader(io.StringIO(fetch(sha, "logic/upgrade_tasks.csv"))))
+    header = r[1][1:]
+    tasks = []
+    for line in r[3:]:
+        d = dict(zip(header, line[1:]))
+        if d.get("Name") and d.get("Disabled") != "TRUE":
+            tasks.append({"type": d["TaskType"], "target": num(d.get("Quantity"))})
+    return {"control": ids_by_name["BB BOB Control"][0], "tasks": tasks}
+
+
 def main(sha: str):
     texts = {"de": {}, "en": {}}
     for lang, path in (("de", "localization/de.csv"), ("en", "localization/texts.csv")):
@@ -241,6 +288,7 @@ def main(sha: str):
 
     items = {}
     ids_by_name = {}
+    pending_gear = []
     for table, (kind, id_base) in TABLES.items():
         for index, (name, levels) in enumerate(rows(fetch(sha, f"logic/{table}.csv"))):
             first = levels[0]
@@ -263,16 +311,25 @@ def main(sha: str):
             first_level = num(first.get("VisualLevel"), 1) or 1
             if first_level > 1:
                 items[str(gid)]["first"] = first_level
+            if first.get("GearUpBuilding"):
+                pending_gear.append((str(gid), levels, first))  # Ziel steht evtl. weiter unten in der Tabelle
             group = filter_group(kind, first)
             if group:
                 items[str(gid)]["group"] = group
+            if kind == "equipment":
+                items[str(gid)].update(equipment_info(levels, first, items))
             unlock = unlock_hall(kind, first, ids_by_name, items)
             if unlock:
                 items[str(gid)]["unlock"] = unlock
 
+    for gid, levels, first in pending_gear:
+        gear = gear_up(levels, first, ids_by_name)
+        if gear:
+            items[gid]["gearUp"] = gear
+
     version = json.loads(fetch(sha, "fingerprint.json")).get("version")
     out = {"version": version, "fingerprint": sha, "generated": date.today().isoformat(),
-           "items": items, "limits": limits(sha, ids_by_name), "boosts": boosts(sha)}
+           "items": items, "limits": limits(sha, ids_by_name), "boosts": boosts(sha), "bob": bob_tasks(sha, ids_by_name)}
     (ROOT / "data").mkdir(exist_ok=True)
     (ROOT / "data" / "game.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"{len(items)} Objekte, Spielversion {version} → data/game.json")

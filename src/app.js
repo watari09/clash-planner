@@ -2,6 +2,8 @@ import { readVillage, analyze, progress, schedule, toIcs, icsCalendar, formatDur
 import { nextStep, simulate, cleanPlan, groupOf } from './planner.js';
 import { BOOST_TYPES, applyBoosts, runningKey } from './boosts.js';
 import { magicItems } from './magic.js';
+import { bobStatus, TASK_TEXT } from './bob.js';
+import { oreStatus, ORES } from './ore.js';
 
 // localStorage-Schlüssel
 const STORE_VILLAGES = 'planner.villages'; // { tag: json-text }
@@ -162,6 +164,7 @@ function render() {
   renderProgress(r);
   renderPlan(r, now);
   renderMagic(r, now);
+  renderOre();
   showTab(localStorage.getItem(STORE_TAB) || 'overview');
 }
 
@@ -444,7 +447,45 @@ function renderProgress(r) {
       )),
     ));
   }
-  $('progress').replaceChildren(listControls(), ...sections, renderBoost(b));
+  $('progress').replaceChildren(listControls(), ...sections, renderBob(), renderBoost(b));
+}
+
+function renderBob() {
+  if (!village.buildings2?.length) return null;
+  const s = bobStatus(village, game);
+  if (s.control.unlocked) return null;
+  const doneCount = s.tasks.filter((t) => t.done).length;
+  const rows = [];
+  rows.push(el('li', {},
+    el('span', { class: 'name' }, `${s.control.built ? '✓' : '○'} B.O.B.s Zentrale bauen`,
+      el('span', { class: 'sub' }, s.control.built ? `Stufe ${s.control.level} von ${s.control.max} – jede erledigte Aufgabe schaltet eine Stufe frei` : `ab Meisterhütte ${s.control.requiredHall}`)),
+    el('span', { class: 'time' }, el('b', {}, s.control.built ? `${s.control.level}/${s.control.max}` : '0/1'))));
+  for (const t of s.tasks) {
+    const text = TASK_TEXT[t.type]?.de || t.type;
+    const label = t.type === 'GearUp' ? `${text}: ${t.target}` : `${text} ${t.target}`;
+    const steps = t.steps.map((x) => {
+      const before = (x.prereq || []).map((p) => `${p.name} ${p.from !== undefined ? `${p.from}→${p.to}` : `auf ${p.to}`} (${days(p.seconds)})`);
+      const main = x.gearUp ? `${x.name} umrüsten (${days(x.seconds)}, ${costText(x.cost)})` : `${x.name} ${x.from}→${x.to} (${days(x.seconds)})`;
+      return before.length ? `${main} – vorher ${before.join(', ')}` : main;
+    });
+    const blocked = { hall: 'Meisterhütte zu niedrig', lab: 'Sternlabor zu niedrig', gear: 'nicht genug umrüstbare Gebäude' }[t.blocked];
+    rows.push(el('li', {},
+      el('span', { class: 'name' }, `${t.done ? '✓' : '○'} ${label}`,
+        steps.map((x) => el('span', { class: 'sub' }, x)),
+        blocked ? el('span', { class: 'sub warn' }, blocked) : null),
+      el('span', { class: 'time' }, el('b', {}, `${t.current}/${t.target}`))));
+  }
+  return el('section', { class: 'card progress' },
+    el('div', { class: 'group-head' }, el('h3', {}, '6. Bauarbeiter (B.O.B.)'), el('span', { class: 'pct' }, `${doneCount}/${s.tasks.length}`)),
+    el('p', { class: 'muted small' }, 'Aufgaben aus den Spieldaten; für jede offene der kürzeste Weg (Helden-Stufen so verteilt, dass sie parallel möglichst schnell fertig werden).'),
+    el('ul', { class: 'items' }, rows),
+    el('dl', { class: 'facts' },
+      el('dt', {}, 'Nachtdorf-Bauarbeiter'), el('dd', {}, `${days(s.totals.builderSeconds)} mit ${s.totals.bbBuilders}`),
+      el('dt', {}, 'Sternlabor'), el('dd', {}, days(s.totals.labSeconds)),
+      el('dt', {}, 'Gear-Ups'), el('dd', {}, days(s.totals.gearSeconds)),
+      el('dt', {}, 'Frühestens'), el('dd', {}, el('b', {}, days(s.totals.seconds))),
+      el('dt', {}, 'Kosten'), el('dd', {}, costText(s.totals.cost))),
+  );
 }
 
 function bar(percent) {
@@ -622,6 +663,37 @@ function renderMagic(r, now) {
           el('span', { class: 'name' }, i.name, el('span', { class: 'lvl' }, ` → ${i.to}`)),
           el('span', { class: 'time' }, el('b', {}, `${i.running ? '⏳ ' : ''}${formatDuration(i.seconds)}`)))))
         : el('p', { class: 'muted small' }, 'Nichts, wofür sich das Buch gerade lohnt.'))),
+  );
+}
+
+// ---------- Erz-Rechner ----------
+
+const STORE_ORE = 'planner.ore'; // { useBlacksmith: bool }
+const fmtInt = new Intl.NumberFormat('de-DE');
+const RARITY = { common: 'gewöhnlich', epic: 'episch', legendary: 'legendär' };
+
+function oreText(ore) {
+  const parts = Object.keys(ORES).filter((k) => ore[k]).map((k) => `${fmtInt.format(ore[k])} ${ORES[k].de}`);
+  return parts.join(' · ') || 'fertig ✓';
+}
+
+function renderOre() {
+  const opts = { useBlacksmith: false, ...readJson(STORE_ORE, {}) };
+  const s = oreStatus(village, game, 'de', opts);
+  $('ore').replaceChildren(
+    el('section', { class: 'card' },
+      el('h3', {}, 'Erz bis zum Maximum'),
+      el('p', { class: 'muted small' }, 'Für jede Ausrüstung, die du besitzt: Erz von der aktuellen bis zur höchsten Stufe.'),
+      el('label', { class: 'check' },
+        el('input', { type: 'checkbox', checked: opts.useBlacksmith, onchange: (e) => { localStorage.setItem(STORE_ORE, JSON.stringify({ useBlacksmith: e.target.checked })); render(); } }),
+        ` Nur bis zur aktuellen Schmied-Stufe (${s.blacksmith})`),
+      el('dl', { class: 'facts' }, Object.keys(ORES).flatMap((k) => [el('dt', {}, ORES[k].de), el('dd', {}, el('b', {}, fmtInt.format(s.total[k] || 0)))]))),
+    ...s.heroes.map((h) => el('section', { class: 'card group' },
+      el('div', { class: 'group-head' }, el('h3', {}, h.name), el('span', { class: 'muted small' }, `${h.owned}/${h.items.length} besessen`)),
+      el('p', { class: 'small' }, oreText(h.ore)),
+      el('ul', { class: 'items' }, h.items.map((i) => el('li', { class: i.owned ? '' : 'done-item' },
+        el('span', { class: 'name' }, i.name, el('span', { class: 'sub' }, `${RARITY[i.rarity] || i.rarity}${i.owned ? ` · Stufe ${i.level} → ${i.to}` : ' · nicht freigeschaltet'}`)),
+        el('span', { class: 'time small' }, i.owned ? oreText(i.ore) : '–')))))),
   );
 }
 
