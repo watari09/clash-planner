@@ -5,6 +5,7 @@ Webseite: Dorf-Export aus Clash of Clans einfügen →
 - laufende Upgrades mit sekundengenauer Fertig-Zeit, als Kalender-Erinnerungen (`.ics`) übernehmbar
 - Fortschritt bis zum Maximum des aktuellen Rathauses bzw. der Meisterhütte: Prozent (nach Bauzeit), Bauarbeiter- und Labor-Tage, Kosten je Ressource, Liste aller offenen Upgrades
 - Upgrade-Plan: gewünschte nächste Upgrades vormerken; sie werden auf die Bauarbeiter bzw. Labore verteilt, sobald diese frei werden → Start-/Endzeiten und wann welche Ressourcen bereitliegen müssen (auch als Kalender)
+- Helfer & Boosts eintragen (Lehrling, Laborgehilfe, Bauarbeiter-/Forschungs-/Begleitertrank, Bauarbeiterbissen, Forschersuppe, Uhrenturm, Uhrenturm-Trank) → Fertig-Zeiten werden exakt neu berechnet, auch für Kalender und Plan
 - mehrere Dörfer, Rabatt (Goldpass/Season-Boost) einstellbar
 
  Läuft komplett im Browser, keine Anmeldung, keine Daten auf einem Server.
@@ -17,6 +18,7 @@ npm test                         # Node ≥ 20, keine Abhängigkeiten
 ```
 
 - `src/village.js` – Auswertung des Exports, Fortschritt und Kalender-Erzeugung (ohne DOM, getestet)
+- `src/boosts.js` – Beschleuniger auf laufende Upgrades anwenden (ohne DOM, getestet)
 - `src/planner.js` – Upgrade-Plan: Verteilung auf Bauarbeiter/Labore, Ressourcen-Zeitplan (ohne DOM, getestet)
 - `src/app.js` – Oberfläche
 - `data/game.json` – Namen, Stufen und Bauzeiten aller Spielobjekte

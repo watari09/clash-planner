@@ -1,5 +1,6 @@
 import { readVillage, analyze, progress, toIcs, icsCalendar, formatDuration, RESOURCES, GROUPS } from './village.js';
 import { nextStep, simulate, cleanPlan, groupOf } from './planner.js';
+import { BOOST_TYPES, applyBoosts, runningKey } from './boosts.js';
 
 // localStorage-Schlüssel
 const STORE_VILLAGES = 'planner.villages'; // { tag: json-text }
@@ -9,6 +10,7 @@ const STORE_BOOST = 'planner.boost'; // { time: %, cost: % } z. B. Goldpass/Seas
 const LEGACY_VILLAGE = 'planner.village'; // alte Version: nur ein Dorf
 const STORE_TAB = 'planner.tab';
 const planKey = () => `planner.plan.${village?.tag || 'Dorf'}`; // [{ id, to, n }] je Dorf
+const boostKey = () => `planner.boosts.${village?.tag || 'Dorf'}`; // [{ type, at, target? }] je Dorf
 
 const $ = (id) => document.getElementById(id);
 let game = null;
@@ -23,6 +25,23 @@ const readJson = (key, fallback) => {
 const villages = () => readJson(STORE_VILLAGES, {});
 const getPlan = () => readJson(planKey(), []);
 const setPlan = (plan) => localStorage.setItem(planKey(), JSON.stringify(plan));
+const getBoosts = () => readJson(boostKey(), []);
+const setBoosts = (b) => localStorage.setItem(boostKey(), JSON.stringify(b));
+
+/** Auswertung inkl. eingetragener Boosts – Grundlage für Übersicht, Kalender und Plan. */
+function current() {
+  const r = analyze(village, game);
+  // Boosts vor dem Export stecken schon in den Timern → aufräumen
+  const events = getBoosts().filter((e) => e.at >= r.exportedAt);
+  if (events.length !== getBoosts().length) setBoosts(events);
+  const { running, applied } = applyBoosts(r.running, events, game, village);
+  r.running = running;
+  for (const g of r.groups) g.items = running.filter((x) => x.group === g.key);
+  r.boosts = applied;
+  const tower = applied.filter((a) => a.type === 'clockTower').at(-1);
+  if (tower) r.clockTowerReadyAt = Math.max(r.clockTowerReadyAt || 0, tower.at + game.boosts.clockTower.cooldown * 1000);
+  return r;
+}
 const boost = () => ({ time: 0, cost: 0, ...readJson(STORE_BOOST, {}) });
 
 function migrate() {
@@ -118,7 +137,7 @@ function render() {
   $('result').hidden = !village;
   renderSwitcher();
   if (!village || !game) return;
-  const r = analyze(village, game);
+  const r = current();
   const now = Date.now();
   const age = now - r.exportedAt;
   const ageText = age < 60000 ? 'gerade eben' : `vor ${formatDuration(Math.round(age / 1000))}`;
@@ -228,10 +247,54 @@ function renderExtras(r, now) {
       el('span', { class: 'time' }, el('b', {}, left > 0 ? `in ${formatDuration(left)}` : 'bereit'),
         left > 0 ? el('span', { class: 'muted' }, when(at)) : null));
   };
-  const extras = r.helpers.map((h) => row(`${h.name} (Stufe ${h.level})`, h.readyAt));
-  if (r.clockTowerReadyAt) extras.push(row('Uhrenturm-Boost', r.clockTowerReadyAt));
-  $('extras').replaceChildren(el('h3', {}, 'Helfer & Boosts'), el('ul', { class: 'items' }, extras));
-  $('extras').hidden = !extras.length;
+  const ready = r.helpers.filter((h) => h.id === 93000000 || h.id === 93000001).map((h) => row(`${h.name} (Stufe ${h.level})`, h.readyAt));
+  if (r.clockTowerReadyAt) ready.push(row('Uhrenturm', r.clockTowerReadyAt));
+
+  // Eintragen: welche Boosts passen zu diesem Dorf?
+  const slots = slotsByGroup(r, now);
+  const available = Object.entries(BOOST_TYPES).filter(([, d]) => d.groups.some((g) => (slots[g] || 0) > 0));
+  const add = (type, target) => {
+    setBoosts([...getBoosts(), { type, at: Date.now(), ...(target ? { target } : {}) }]);
+    render();
+    const last = current().boosts.at(-1);
+    toast(last?.saved ? `${BOOST_TYPES[type].de}: ${formatDuration(Math.round(last.saved / 1000))} gespart` : `${BOOST_TYPES[type].de} eingetragen – betrifft gerade kein laufendes Upgrade`);
+  };
+  // Helfer und Uhrenturm haben eine Abklingzeit: erst danach eintragbar
+  const readyAt = (type, d) => (d.helper ? r.helpers.find((h) => h.id === d.helper)?.readyAt
+    : type === 'clockTower' ? r.clockTowerReadyAt : 0) || 0;
+  const lock = (type, d) => {
+    const at = readyAt(type, d);
+    return at > now ? { disabled: true, title: `bereit ${when(at)}` } : {};
+  };
+  const buttons = available.filter(([, d]) => !d.single).map(([type, d]) =>
+    el('button', { class: 'ghost small', onclick: () => add(type), ...lock(type, d) }, d.de));
+  const singles = available.filter(([, d]) => d.single).map(([type, d]) => {
+    const options = r.running.filter((x) => d.groups.includes(x.group) && x.finishAt > now);
+    if (!options.length) return null;
+    const select = el('select', { 'aria-label': `${d.de}: Upgrade wählen` },
+      options.map((x) => el('option', { value: x.key }, `${x.name} → ${x.level}`)));
+    return el('div', { class: 'row assign' }, select,
+      el('button', { class: 'ghost small', onclick: () => add(type, select.value), ...lock(type, d) },
+        readyAt(type, d) > now ? `${d.de}: bereit ${when(readyAt(type, d))}` : `${d.de} zuweisen`));
+  });
+
+  const logged = (r.boosts || []).map((b, i) => el('li', {},
+    el('span', { class: 'name' }, BOOST_TYPES[b.type]?.de || b.type, el('br'), el('span', { class: 'muted small' }, when(b.at))),
+    el('span', { class: 'time' }, el('b', {}, b.saved ? `−${formatDuration(Math.round(b.saved / 1000))}` : 'ohne Wirkung'),
+      el('button', {
+        class: 'ghost small',
+        onclick: () => { const all = getBoosts().sort((a, c) => a.at - c.at); all.splice(i, 1); setBoosts(all); render(); },
+      }, 'Rückgängig'))));
+
+  $('extras').replaceChildren(
+    el('h3', {}, 'Helfer & Boosts'),
+    el('ul', { class: 'items' }, ready),
+    el('p', { class: 'muted small' }, 'Gerade benutzt? Eintragen, dann rechnet die Seite die Fertig-Zeiten neu – auch für Kalender und Plan. Mit dem nächsten Export verfallen die Einträge (dann stecken sie schon in den Timern).'),
+    el('div', { class: 'row boosts' }, buttons),
+    ...singles.filter(Boolean),
+    logged.length ? el('ul', { class: 'items' }, logged) : null,
+  );
+  $('extras').hidden = false;
 }
 
 function renderProgress(r) {
@@ -449,7 +512,7 @@ function download(text, name) {
 // ---------- Kalender ----------
 
 function downloadIcs() {
-  download(toIcs(analyze(village, game)), 'clash-upgrades.ics');
+  download(toIcs(current()), 'clash-upgrades.ics');
 }
 
 // ---------- Start ----------

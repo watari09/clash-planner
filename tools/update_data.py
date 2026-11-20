@@ -154,6 +154,44 @@ def limits(sha: str, ids_by_name: dict) -> dict:
     return out
 
 
+def global_value(rows_, name, column="NumberValue"):
+    """Wert aus globals.csv; Listen gehen über Folgezeilen ohne Namen weiter."""
+    header = rows_[0]
+    for i, r in enumerate(rows_):
+        if r and r[0] == name:
+            if column != "NumberArray":
+                return num(r[header.index(column)])
+            out = [num(r[header.index(column)])]
+            for nxt in rows_[i + 1:]:
+                if nxt[0]:
+                    break
+                out.append(num(nxt[header.index(column)]))
+            return out
+    raise KeyError(name)
+
+
+def boosts(sha: str) -> dict:
+    """Beschleuniger: Multiplikator (x-fache Geschwindigkeit) und Dauer in Sekunden."""
+    g = list(csv.reader(io.StringIO(fetch(sha, "logic/globals.csv"))))
+    c = {name: levels[0] for name, levels in rows(fetch(sha, "logic/consumables.csv"))}
+    helpers = {name: [num(d.get("BoostMultiplier")) for d in levels]
+               for name, levels in rows(fetch(sha, "logic/villager_apprentices.csv"))}
+    return {
+        "builderPotion": {"mult": global_value(g, "BOOSTER_BUILDERS_SPEEDUP"), "sec": global_value(g, "BOOSTER_BUILDERS_DURATION")},
+        "researchPotion": {"mult": global_value(g, "BOOSTER_LABORATORY_SPEEDUP"), "sec": global_value(g, "BOOSTER_LABORATORY_DURATION")},
+        "petPotion": {"mult": global_value(g, "BOOSTER_PET_SHOP_SPEEDUP"), "sec": global_value(g, "BOOSTER_PET_SHOP_DURATION")},
+        "builderBite": {"mult": num(c["Builder Bite"]["BoostMultiplier"]), "sec": num(c["Builder Bite"]["DurationSeconds"])},
+        "labLicorice": {"mult": num(c["Lab Licorice"]["BoostMultiplier"]), "sec": num(c["Lab Licorice"]["DurationSeconds"])},
+        "clockTower": {"mult": global_value(g, "CLOCK_TOWER_BOOST_MULTIPLIER"),
+                       "secByLevel": [m * 60 for m in global_value(g, "CLOCK_TOWER_BOOST_MINS", "NumberArray")],
+                       "cooldown": global_value(g, "CLOCK_TOWER_BOOST_COOLDOWN_MINS") * 60},
+        "clockTowerPotion": {"mult": global_value(g, "CLOCK_TOWER_BOOST_MULTIPLIER"), "sec": global_value(g, "BOOSTER_CLOCKTOWER_DURATION")},
+        # Helfer: Stufe n → zusätzliche Stunden pro Stunde (Gesamtgeschwindigkeit n+1), 1 h lang
+        "builderApprentice": {"extraByLevel": helpers["BuilderApprentice"], "sec": 3600},
+        "labAssistant": {"extraByLevel": helpers["ResearchApprentice"], "sec": 3600},
+    }
+
+
 def main(sha: str):
     texts = {"de": {}, "en": {}}
     for lang, path in (("de", "localization/de.csv"), ("en", "localization/texts.csv")):
@@ -188,7 +226,7 @@ def main(sha: str):
 
     version = json.loads(fetch(sha, "fingerprint.json")).get("version")
     out = {"version": version, "fingerprint": sha, "generated": date.today().isoformat(),
-           "items": items, "limits": limits(sha, ids_by_name)}
+           "items": items, "limits": limits(sha, ids_by_name), "boosts": boosts(sha)}
     (ROOT / "data").mkdir(exist_ok=True)
     (ROOT / "data" / "game.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"{len(items)} Objekte, Spielversion {version} → data/game.json")
