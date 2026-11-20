@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Upgrade-Planer für Clash of Clans</title>
+  <meta name="description" content="Dorf-Export einfügen, laufende Upgrades sehen und als Kalender-Erinnerungen übernehmen.">
+  <meta name="theme-color" content="#1d2430">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="src/app.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Upgrade-Planer</h1>
+    <p class="sub">für Clash of Clans · inoffiziell</p>
+  </header>
+
+  <main>
+    <section id="input" class="card">
+      <h2>Dorfdaten einfügen</h2>
+      <ol class="steps">
+        <li>In Clash die Dorfdaten exportieren – sie landen in der Zwischenablage.</li>
+        <li>Hier auf <b>Einfügen</b> tippen.</li>
+      </ol>
+      <div class="row">
+        <button id="paste" class="primary">Einfügen</button>
+        <button id="manual" class="ghost">Von Hand einfügen</button>
+      </div>
+      <div id="manual-box" hidden>
+        <textarea id="json" rows="5" placeholder='{"tag":"#…","timestamp":…,"buildings":[…]}' spellcheck="false"></textarea>
+        <button id="load" class="primary">Übernehmen</button>
+      </div>
+      <p id="error" class="error" hidden></p>
+    </section>
+
+    <section id="result" hidden>
+      <div class="card summary">
+        <div id="summary"></div>
+        <div class="row">
+          <button id="ics" class="primary">In Kalender übernehmen</button>
+        </div>
+        <p class="hint">Lädt eine Kalender-Datei mit einer Erinnerung pro Upgrade. Nach einem neuen Export einfach nochmal – bestehende Termine werden aktualisiert.</p>
+      </div>
+      <div id="groups"></div>
+      <div id="extras" class="card"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Die Daten bleiben in deinem Browser. Spieldaten: Version <span id="data-version">–</span>.</p>
+    <p class="small">Dieser Inhalt ist nicht mit Supercell verbunden und wird nicht von Supercell unterstützt, gesponsert oder ausdrücklich genehmigt. Supercell ist nicht für ihn verantwortlich. Weitere Informationen: <a href="https://supercell.com/en/fan-content-policy/" rel="noopener">Supercells Richtlinie für Fan-Inhalte</a>.</p>
+  </footer>
+</body>
+</html>
