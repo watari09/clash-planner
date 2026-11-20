@@ -1,5 +1,7 @@
 # Upgrade-Planer für Clash of Clans
 
+**➜ Zur Seite: https://watari09.github.io/clash-planner/**
+
 Webseite: Dorf-Export aus Clash of Clans einfügen →
 
 - laufende Upgrades mit sekundengenauer Fertig-Zeit, als Kalender-Erinnerungen (`.ics`) übernehmbar
