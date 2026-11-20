@@ -22,6 +22,7 @@ test('Labor, Nachtdorf, Sternlabor', () => {
   assert.deepEqual(names('lab'), ['Drache 8']);
   assert.deepEqual(names('builder_builders'), ['Multimörser 6', 'Elixierlager 8', 'Sternlabor 9']);
   assert.deepEqual(names('star_lab'), ['Nachthexe 15']);
+  assert.equal(group('builder_builders').slots, 3); // Meisterbauarbeiter + O.T.T.O. + B.O.T.O.
   assert.equal(group('pets').slots, 0);
 });
 

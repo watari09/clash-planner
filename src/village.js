@@ -10,7 +10,8 @@ export const IDS = {
   petHouse: 1000068,
   builderHall: 1000034,
   starLab: 1000046,
-  ottoOutpost: 1000078,
+  ottoOutpost: 1000078, // O.T.T.O. als zweiter Nachtdorf-Bauarbeiter (ab Meisterhütte 6)
+  botoShed: 1000047, // „B.O.T.O.s Schuppen“: dritter Nachtdorf-Bauarbeiter (ab Meisterhütte 2, 1000 Edelsteine)
 };
 
 /** Gruppen = wer arbeitet an einem Upgrade. */
@@ -92,8 +93,10 @@ export function analyze(village, game, lang = 'de') {
     home_builders: countOf(b, IDS.builderHut) + countOf(b, IDS.bobHut),
     lab: countOf(b, IDS.laboratory) > 0 ? 1 : 0,
     pets: countOf(b, IDS.petHouse) > 0 ? 1 : 0,
-    // Meisterbauer + O.T.T.O. – nicht sicher aus dem Export ableitbar, daher in der Oberfläche änderbar
-    builder_builders: b2.length ? 1 + (countOf(b2, IDS.ottoOutpost) > 0 ? 1 : 0) : 0,
+    // Meisterbauarbeiter + O.T.T.O. + B.O.T.O.
+    builder_builders: b2.length
+      ? 1 + (countOf(b2, IDS.ottoOutpost) > 0 ? 1 : 0) + (countOf(b2, IDS.botoShed) > 0 ? 1 : 0)
+      : 0,
     star_lab: countOf(b2, IDS.starLab) > 0 ? 1 : 0,
   };
 
