@@ -196,3 +196,8 @@ select.inline {
 .warn { color: var(--warn) !important; }
 .items .sub { margin: 1px 0 0; line-height: 1.35; }
 .items .name > .sub:first-of-type { margin-top: 3px; }
+.head-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+#lang {
+  font: inherit; font-size: .85rem; color: var(--text); background: var(--card);
+  border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px;
+}

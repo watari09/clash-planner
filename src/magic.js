@@ -4,10 +4,10 @@
 import { IDS, levelEntry } from './village.js';
 
 export const BOOKS = {
-  fighting: { de: 'Buch des Kampfes', match: (it) => it.kind === 'troop' },
-  spells: { de: 'Buch der Zauber', match: (it) => it.kind === 'spell' },
-  heroes: { de: 'Buch der Helden', match: (it) => it.kind === 'hero' },
-  building: { de: 'Buch des Bauens', match: (it) => (it.kind === 'building' && it.name.en !== 'Wall') || it.kind === 'trap' },
+  fighting: { de: 'Buch des Kampfes', en: 'Book of Fighting', match: (it) => it.kind === 'troop' },
+  spells: { de: 'Buch der Zauber', en: 'Book of Spells', match: (it) => it.kind === 'spell' },
+  heroes: { de: 'Buch der Helden', en: 'Book of Heroes', match: (it) => it.kind === 'hero' },
+  building: { de: 'Buch des Bauens', en: 'Book of Building', match: (it) => (it.kind === 'building' && it.name.en !== 'Wall') || it.kind === 'trap' },
 };
 
 const SECTIONS = ['buildings', 'traps', 'heroes', 'units', 'spells', 'siege_machines'];
@@ -49,7 +49,7 @@ export function magicItems(village, game, running, now = village.timestamp * 100
   }
 
   return Object.fromEntries(Object.entries(BOOKS).map(([key, book]) => [key, {
-    title: book.de,
+    title: book[lang] || book.de,
     items: Object.values(best)
       .filter((o) => book.match(game.items[String(o.id)]))
       .sort((a, b) => b.seconds - a.seconds || a.name.localeCompare(b.name))

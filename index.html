@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Upgrade-Planer für Clash of Clans</title>
+  <title>Upgrade-Planer für Clash of Clans · Upgrade Planner</title>
   <meta name="description" content="Dorf-Export einfügen, laufende Upgrades sehen und als Kalender-Erinnerungen übernehmen.">
   <meta name="theme-color" content="#1d2430">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
@@ -12,24 +12,30 @@
 </head>
 <body>
   <header>
-    <h1>Upgrade-Planer</h1>
-    <p class="sub">für Clash of Clans · inoffiziell</p>
+    <div class="head-row">
+      <h1 data-i18n="Upgrade-Planer">Upgrade-Planer</h1>
+      <select id="lang" aria-label="Sprache / Language">
+        <option value="de">Deutsch</option>
+        <option value="en">English</option>
+      </select>
+    </div>
+    <p class="sub" data-i18n="für Clash of Clans · inoffiziell">für Clash of Clans · inoffiziell</p>
   </header>
 
   <main>
     <section id="input" class="card">
-      <h2>Dorfdaten einfügen</h2>
+      <h2 data-i18n="Dorfdaten einfügen">Dorfdaten einfügen</h2>
       <ol class="steps">
-        <li>In Clash die Dorfdaten exportieren – sie landen in der Zwischenablage.</li>
-        <li>Hier auf <b>Einfügen</b> tippen.</li>
+        <li data-i18n="In Clash die Dorfdaten exportieren – sie landen in der Zwischenablage.">In Clash die Dorfdaten exportieren – sie landen in der Zwischenablage.</li>
+        <li data-i18n-html="Hier auf <b>Einfügen</b> tippen.">Hier auf <b>Einfügen</b> tippen.</li>
       </ol>
       <div class="row">
-        <button id="paste" class="primary">Einfügen</button>
-        <button id="manual" class="ghost">Von Hand einfügen</button>
+        <button id="paste" class="primary" data-i18n="Einfügen">Einfügen</button>
+        <button id="manual" class="ghost" data-i18n="Von Hand einfügen">Von Hand einfügen</button>
       </div>
       <div id="manual-box" hidden>
         <textarea id="json" rows="5" placeholder='{"tag":"#…","timestamp":…,"buildings":[…]}' spellcheck="false"></textarea>
-        <button id="load" class="primary">Übernehmen</button>
+        <button id="load" class="primary" data-i18n="Übernehmen">Übernehmen</button>
       </div>
       <p id="error" class="error" hidden></p>
     </section>
@@ -40,17 +46,17 @@
       <div class="card summary">
         <div id="summary"></div>
         <div class="row">
-          <button id="ics" class="primary">In Kalender übernehmen</button>
+          <button id="ics" class="primary" data-i18n="In Kalender übernehmen">In Kalender übernehmen</button>
         </div>
-        <p class="hint">Lädt eine Kalender-Datei mit einer Erinnerung pro laufendem Upgrade. Nach einem neuen Export einfach nochmal – bestehende Termine werden aktualisiert.</p>
+        <p class="hint" data-i18n="Lädt eine Kalender-Datei mit einer Erinnerung pro laufendem Upgrade. Nach einem neuen Export einfach nochmal – bestehende Termine werden aktualisiert.">Lädt eine Kalender-Datei mit einer Erinnerung pro laufendem Upgrade. Nach einem neuen Export einfach nochmal – bestehende Termine werden aktualisiert.</p>
       </div>
 
       <nav class="tabs" role="tablist">
-        <button role="tab" data-tab="overview">Übersicht</button>
-        <button role="tab" data-tab="progress">Fortschritt</button>
-        <button role="tab" data-tab="plan">Plan <span id="plan-count" class="badge" hidden></span></button>
-        <button role="tab" data-tab="magic">Bücher</button>
-        <button role="tab" data-tab="ore">Erz</button>
+        <button role="tab" data-tab="overview"><span data-i18n="Übersicht">Übersicht</span></button>
+        <button role="tab" data-tab="progress"><span data-i18n="Fortschritt">Fortschritt</span></button>
+        <button role="tab" data-tab="plan"><span data-i18n="Plan">Plan</span> <span id="plan-count" class="badge" hidden></span></button>
+        <button role="tab" data-tab="magic"><span data-i18n="Bücher">Bücher</span></button>
+        <button role="tab" data-tab="ore"><span data-i18n="Erz">Erz</span></button>
       </nav>
 
       <div data-panel="overview">
@@ -74,8 +80,8 @@
   </main>
 
   <footer>
-    <p>Die Daten bleiben in deinem Browser. Spieldaten: Version <span id="data-version">–</span>.</p>
-    <p class="small">Dieser Inhalt ist nicht mit Supercell verbunden und wird nicht von Supercell unterstützt, gesponsert oder ausdrücklich genehmigt. Supercell ist nicht für ihn verantwortlich. Weitere Informationen: <a href="https://supercell.com/en/fan-content-policy/" rel="noopener">Supercells Richtlinie für Fan-Inhalte</a>.</p>
+    <p><span data-i18n="Die Daten bleiben in deinem Browser. Spieldaten: Version">Die Daten bleiben in deinem Browser. Spieldaten: Version</span> <span id="data-version">–</span>.</p>
+    <p class="small"><span data-i18n="Dieser Inhalt ist nicht mit Supercell verbunden und wird nicht von Supercell unterstützt, gesponsert oder ausdrücklich genehmigt. Supercell ist nicht für ihn verantwortlich. Weitere Informationen:">Dieser Inhalt ist nicht mit Supercell verbunden und wird nicht von Supercell unterstützt, gesponsert oder ausdrücklich genehmigt. Supercell ist nicht für ihn verantwortlich. Weitere Informationen:</span> <a href="https://supercell.com/en/fan-content-policy/" rel="noopener" data-i18n="Supercells Richtlinie für Fan-Inhalte">Supercells Richtlinie für Fan-Inhalte</a>.</p>
   </footer>
 </body>
 </html>

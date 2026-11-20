@@ -13,6 +13,7 @@ Webseite: Dorf-Export aus Clash of Clans einfügen →
 - Erz-Rechner: glänzendes, glühendes und Sternenerz je Ausrüstung bis zum Maximum oder zur aktuellen Schmied-Stufe
 - Listen sortierbar (Restzeit, schnellste/günstigste nächste Stufe), fertige ein-/ausblendbar, Stufen jedes Exemplars, Mauern in 10er-Schritten planen
 - mehrere Dörfer, Rabatt (Goldpass/Season-Boost) einstellbar
+- Deutsch und Englisch (Spielnamen aus den Spieldaten, Oberfläche über `src/i18n.js`)
 
  Läuft komplett im Browser, keine Anmeldung, keine Daten auf einem Server.
 

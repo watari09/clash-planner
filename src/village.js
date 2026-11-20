@@ -162,15 +162,21 @@ export function icsCalendar(events, now = Date.now()) {
   return lines.join('\r\n') + '\r\n';
 }
 
+const ICS_TEXT = {
+  de: { title: (n, l) => `${n} (Stufe ${l}) fertig`, desc: (g) => `${g} – ein Platz ist wieder frei.`, alarm: (n) => `${n} ist fertig` },
+  en: { title: (n, l) => `${n} (level ${l}) done`, desc: (g) => `${g} – a slot is free again.`, alarm: (n) => `${n} is done` },
+};
+
 /** Ein Termin pro laufendem Upgrade, mit Erinnerung zur Fertig-Zeit. */
-export function toIcs(result, now = Date.now()) {
+export function toIcs(result, now = Date.now(), lang = 'de') {
   const tag = (result.tag || 'dorf').replace(/[^A-Z0-9]/gi, '');
+  const tx = ICS_TEXT[lang] || ICS_TEXT.de;
   return icsCalendar(result.running.filter((r) => r.finishAt > now).map((r) => ({
     uid: `${tag}-${r.id}-${Math.round(r.finishAt / 60000)}`,
     start: r.finishAt,
-    title: `${r.name} (Stufe ${r.level}) fertig`,
-    description: `${GROUPS[r.group]?.de || ''} – ein Platz ist wieder frei.`,
-    alarm: `${r.name} ist fertig`,
+    title: tx.title(r.name, r.level),
+    description: tx.desc(GROUPS[r.group]?.[lang] || GROUPS[r.group]?.de || ''),
+    alarm: tx.alarm(r.name),
   })), now);
 }
 

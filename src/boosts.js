@@ -3,15 +3,15 @@
 
 /** Was der Nutzer eintragen kann. `groups`: betroffene Gruppen, `single`: nur ein ausgewähltes Upgrade. */
 export const BOOST_TYPES = {
-  builderPotion: { de: 'Bauarbeitertrank', groups: ['home_builders'] },
-  builderBite: { de: 'Bauarbeiterbissen', groups: ['home_builders'] },
-  builderApprentice: { de: 'Bauarbeiterlehrling', groups: ['home_builders'], single: true, helper: 93000000 },
-  researchPotion: { de: 'Forschungstrank', groups: ['lab'] },
-  labLicorice: { de: 'Forschersuppe', groups: ['lab'] },
-  labAssistant: { de: 'Laborgehilfe', groups: ['lab'], single: true, helper: 93000001 },
-  petPotion: { de: 'Begleitertrank', groups: ['pets'] },
-  clockTower: { de: 'Uhrenturm', groups: ['builder_builders', 'star_lab'] },
-  clockTowerPotion: { de: 'Uhrenturm-Trank', groups: ['builder_builders', 'star_lab'] },
+  builderPotion: { de: 'Bauarbeitertrank', en: 'Builder Potion', groups: ['home_builders'] },
+  builderBite: { de: 'Bauarbeiterbissen', en: 'Builder Bite', groups: ['home_builders'] },
+  builderApprentice: { de: 'Bauarbeiterlehrling', en: "Builder's Apprentice", groups: ['home_builders'], single: true, helper: 93000000 },
+  researchPotion: { de: 'Forschungstrank', en: 'Research Potion', groups: ['lab'] },
+  labLicorice: { de: 'Forschersuppe', en: 'Lab Licorice', groups: ['lab'] },
+  labAssistant: { de: 'Laborgehilfe', en: 'Lab Assistant', groups: ['lab'], single: true, helper: 93000001 },
+  petPotion: { de: 'Begleitertrank', en: 'Pet Potion', groups: ['pets'] },
+  clockTower: { de: 'Uhrenturm', en: 'Clock Tower', groups: ['builder_builders', 'star_lab'] },
+  clockTowerPotion: { de: 'Uhrenturm-Trank', en: 'Clock Tower Potion', groups: ['builder_builders', 'star_lab'] },
 };
 
 const CLOCK_TOWER = 1000039;
