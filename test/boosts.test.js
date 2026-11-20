@@ -52,3 +52,13 @@ test('Boosts vor dem Export-Zeitpunkt werden ignoriert', () => {
   const { applied } = applyBoosts(r.running, [{ type: 'builderPotion', at: t0 - 1 }], game, village);
   assert.equal(applied.length, 0);
 });
+
+import { helperReadyAt } from '../src/boosts.js';
+
+test('Helfer nach Einsatz: wieder bereit zur gleichen Uhrzeit am nächsten Tag', () => {
+  const ready = t0 + 44982e3; // laut Export
+  assert.equal(helperReadyAt(ready, []), ready);
+  assert.equal(helperReadyAt(ready, [ready + 2 * H]), ready + 24 * H);
+  assert.equal(helperReadyAt(ready, [ready + 30 * H]), ready + 48 * H);
+  assert.equal(helperReadyAt(ready, [ready - H]), ready); // noch in der Abklingzeit
+});

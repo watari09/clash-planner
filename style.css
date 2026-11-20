@@ -201,3 +201,5 @@ select.inline {
   font: inherit; font-size: .85rem; color: var(--text); background: var(--card);
   border: 1px solid var(--line); border-radius: 8px; padding: 5px 6px;
 }
+.install { border-color: var(--accent); }
+.install p { margin: 4px 0; }

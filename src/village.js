@@ -1,3 +1,5 @@
+import { boostedFinish } from './boosts.js';
+
 // Auswertung des Dorf-JSON aus Clash of Clans (Einstellungen → „Dorfdaten im JSON-Format exportieren“).
 // Reine Funktionen ohne DOM, damit sie auch in Node getestet werden können.
 
@@ -72,16 +74,34 @@ export function itemName(game, id, lang = 'de') {
 export function analyze(village, game, lang = 'de') {
   const exportedAt = village.timestamp * 1000;
   const running = [];
+  // Helfer, der gerade an einem Upgrade arbeitet (helper_timer): Stufe n → (n+1)-fach
+  const helperMult = (group) => {
+    const type = group === 'lab' ? 'labAssistant' : 'builderApprentice';
+    const id = group === 'lab' ? 93000001 : 93000000;
+    const lvl = (village.helpers || []).find((h) => h.data === id)?.lvl || 1;
+    return (game.boosts?.[type]?.extraByLevel?.[lvl - 1] ?? lvl) + 1;
+  };
   for (const [section, group] of Object.entries(SECTIONS)) {
     for (const e of village[section] || []) {
       if (typeof e.timer !== 'number') continue;
+      const item = game.items[String(e.data)];
+      // Gebäude auf Max-Stufe mit Timer: läuft ein Supercharge
+      const supercharging = item?.supercharge && (e.lvl || 0) >= item.levels.length;
+      let finishAt = exportedAt + e.timer * 1000;
+      if (typeof e.helper_timer === 'number' && e.helper_timer > 0) {
+        finishAt = boostedFinish(finishAt, exportedAt, helperMult(group), e.helper_timer);
+      }
       running.push({
         id: e.data,
         name: itemName(game, e.data, lang),
         section,
         group,
-        level: (e.lvl || 0) + 1, // Zielstufe
-        finishAt: exportedAt + e.timer * 1000,
+        level: supercharging ? e.lvl : (e.lvl || 0) + 1, // Zielstufe
+        supercharge: supercharging ? (e.supercharge || 0) + 1 : undefined,
+        finishAt,
+        helper: typeof e.helper_timer === 'number' && e.helper_timer > 0,
+        recurrentHelper: !!e.recurrent_helper,
+        goblin: !!e.extra, // Goblin-Bauarbeiter aus einem Event
       });
     }
   }
@@ -202,6 +222,7 @@ export const CATEGORIES = {
     ['heroes', { de: 'Helden', en: 'Heroes' }],
     ['lab', { de: 'Labor', en: 'Laboratory' }],
     ['pets', { de: 'Begleiter', en: 'Pets' }],
+    ['supercharge', { de: 'Supercharges', en: 'Supercharges' }],
   ],
   builder: [
     ['buildings', { de: 'Gebäude', en: 'Buildings' }],
@@ -306,7 +327,7 @@ export function progress(village, game, lang = 'de', targets = {}, options = {})
     const owned = {};
     for (const section of listsB) {
       for (const e of village[section] || []) {
-        (owned[e.data] ||= []).push(...Array.from({ length: e.cnt || 1 }, () => ({ lvl: e.lvl || 0, timer: e.timer })));
+        (owned[e.data] ||= []).push(...Array.from({ length: e.cnt || 1 }, () => ({ lvl: e.lvl || 0, timer: e.timer, sc: e.supercharge || 0 })));
       }
     }
     for (const [id, allowed] of Object.entries(limits)) {
@@ -388,6 +409,52 @@ export function progress(village, game, lang = 'de', targets = {}, options = {})
       }
     }
 
+    // Supercharges: Gebäude auf ihrer letzten Stufe bekommen ab einem Rathaus zusätzliche Stufen
+    if (cats.supercharge) {
+      for (const [id, inst] of Object.entries(owned)) {
+        const item = game.items[id];
+        const sc = item?.supercharge;
+        if (!sc || hall < sc.townHall || exclude.has(filterKey(item))) continue;
+        const max = sc.levels.length;
+        const agg = {
+          id: Number(id), name: item.name[lang] || item.name.en, count: 0, from: Infinity, to: max, seconds: 0, cost: {},
+          missing: 0, levels: [], next: null, supercharge: true,
+        };
+        const c = cats.supercharge;
+        for (const ins of inst) {
+          if (ins.lvl < item.levels.length) continue; // erst auf Max-Stufe möglich
+          const running = typeof ins.timer === 'number';
+          const cur = Math.min(ins.sc, max);
+          agg.levels.push(cur + (running ? 1 : 0));
+          c.total += max;
+          c.done += cur;
+          for (let L = 1; L <= max; L++) c.totalSeconds += sc.levels[L - 1][0];
+          if (cur >= max) continue;
+          agg.count += 1;
+          agg.from = Math.min(agg.from, cur);
+          let chain = 0;
+          for (let L = cur + 1; L <= max; L++) {
+            const [sec, cost, res] = sc.levels[L - 1];
+            const isRunning = L === cur + 1 && running;
+            agg.seconds += isRunning ? ins.timer : sec;
+            chain += isRunning ? ins.timer : sec;
+            if (!isRunning && cost) agg.cost[res] = (agg.cost[res] || 0) + cost;
+          }
+          if (chain) c.chains.push(chain);
+        }
+        agg.levels.sort((a, b) => a - b);
+        if (agg.levels.length && agg.levels[0] < max) {
+          const [sec, cost, res] = sc.levels[agg.levels[0]];
+          agg.next = { level: agg.levels[0] + 1, seconds: sec, cost, resource: res };
+        }
+        if (agg.count) {
+          c.items.push(agg);
+          c.seconds += agg.seconds;
+          for (const [r, n] of Object.entries(agg.cost)) c.cost[r] = (c.cost[r] || 0) + n;
+        } else if (agg.levels.length) c.doneItems.push(agg);
+      }
+    }
+
     const list = Object.values(cats);
     for (const c of list) c.items.sort((a, b) => b.seconds - a.seconds || a.name.localeCompare(b.name));
     const done = list.reduce((n, c) => n + c.done, 0);
@@ -405,8 +472,8 @@ export function progress(village, game, lang = 'de', targets = {}, options = {})
       done,
       total,
       categories: list,
-      builderSeconds: sum(['buildings', 'traps', 'walls', 'heroes']),
-      builderChains: list.filter((c) => ['buildings', 'traps', 'walls', 'heroes'].includes(c.key)).flatMap((c) => c.chains),
+      builderSeconds: sum(['buildings', 'traps', 'walls', 'heroes', 'supercharge']),
+      builderChains: list.filter((c) => ['buildings', 'traps', 'walls', 'heroes', 'supercharge'].includes(c.key)).flatMap((c) => c.chains),
       rush,
       labSeconds: sum(['lab']),
       petSeconds: sum(['pets']),

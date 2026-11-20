@@ -26,6 +26,10 @@ export const EN = {
     'This material is unofficial and is not endorsed by Supercell. For more information see',
   'Supercells Richtlinie für Fan-Inhalte': "Supercell's Fan Content Policy",
   'Sprache': 'Language',
+  'Als App auf den Home-Bildschirm': 'Add it to your home screen as an app',
+  '<b>iPhone (Safari):</b> Teilen-Symbol □↑ → „Zum Home-Bildschirm“.': '<b>iPhone (Safari):</b> Share icon □↑ → “Add to Home Screen”.',
+  '<b>Android (Chrome):</b> Menü ⋮ → „Zum Startbildschirm hinzufügen“ bzw. „App installieren“.': '<b>Android (Chrome):</b> Menu ⋮ → “Add to Home screen” or “Install app”.',
+  'Dann startet die Seite wie eine App, ohne Browserleiste. Deine Dörfer bleiben gespeichert.': 'The page then opens like an app, without the browser bar. Your villages stay saved.',
 
   // Fehler beim Einlesen (village.js)
   'Das ist kein gültiges JSON. In Clash: Einstellungen → „Dorfdaten im JSON-Format exportieren“, dann hier einfügen.':
@@ -65,6 +69,10 @@ export const EN = {
   '{n} frei': '{n} free',
   '{a}/{b} belegt': '{a}/{b} busy',
   'Nichts in Arbeit': 'Nothing in progress',
+  'Laborgehilfe arbeitet mit': 'Lab Assistant helping',
+  'Lehrling arbeitet mit': 'Apprentice helping',
+  'täglich': 'daily',
+  'Goblin-Bauarbeiter': 'Goblin Builder',
   '{name} (Stufe {n})': '{name} (level {n})',
   'Uhrenturm': 'Clock Tower',
   '{b}: {d} gespart': '{b}: saved {d}',
@@ -147,6 +155,14 @@ export const EN = {
   'Nachtdorf-Bauarbeiter': 'Builder Base builders',
   '{d} mit {n}': '{d} with {n}',
   'Gear-Ups': 'Gear-ups',
+  'Gear-Up planen': 'Plan gear-up',
+  'Gear-Up {name} geplant': 'Planned gear-up of {name}',
+  'Ein Gear-Up macht der Meisterbauarbeiter – im Plan belegt es einen Nachtdorf-Bauarbeiter.': 'Gear-ups are done by the Master Builder – in the plan they take a Builder Base builder.',
+  '{name} umrüsten': 'Gear up {name}',
+  'Voraussetzung fehlt: {a} {b}/{c}, {d} {e}/{f}': 'Requirement missing: {a} {b}/{c}, {d} {e}/{f}',
+  'Ausrüstung': 'Equipment',
+  '{what} starten': 'Start {what}',
+  'Jetzt {what} starten': 'Start {what} now',
   'Frühestens': 'Earliest',
 
   // Plan

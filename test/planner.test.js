@@ -54,7 +54,7 @@ test('Ressourcen-Bedarf: zeitlich sortiert, laufende Summe, Rabatt wirkt', () =>
   assert.equal(full.total.Gold, 2 * cost);
   assert.deepEqual(full.needs.map((n) => n.cumulative.Gold), [cost, 2 * cost]);
   const cheap = simulate(village, game, [p1], r.running, slots, { now, timeFactor: 0.8, costFactor: 0.8 });
-  assert.equal(cheap.steps[0].cost, Math.round(cost * 0.8));
+  assert.equal(cheap.steps[0].costs.Gold, Math.round(cost * 0.8));
 });
 
 test('Labor und Nachtdorf haben eigene Warteschlangen', () => {
@@ -72,4 +72,31 @@ test('Erledigte Einträge fallen nach neuem Export raus, falsche Reihenfolge ble
   const s = simulate(village, game, [done, blocked, tooEarly], r.running, slots, { now });
   assert.deepEqual(s.dropped.map((d) => d.reason), ['done']);
   assert.equal(cleanPlan([done, blocked, tooEarly], s.dropped).length, 2);
+});
+
+import { gearCandidates, nextEquipStep } from '../src/planner.js';
+
+test('Gear-Up im Plan: belegt einen Nachtdorf-Bauarbeiter, Voraussetzungen werden geprüft', () => {
+  const cands = gearCandidates(village, game);
+  const archer = cands.find((c) => c.name === 'Bogenschützenturm');
+  const mortar = cands.find((c) => c.name === 'Minenwerfer');
+  assert.equal(cands.find((c) => c.name === 'Kanone').geared, true);
+  const s = simulate(village, game, [{ kind: 'gear', id: archer.id }, { kind: 'gear', id: mortar.id }, { kind: 'gear', id: CANNON }], r.running, slots, { now });
+  assert.equal(s.steps.length, 1);
+  assert.equal(s.steps[0].group, 'builder_builders');
+  assert.equal(s.steps[0].end - s.steps[0].start, 7 * 86400e3);
+  assert.deepEqual(s.steps[0].costs, { Gold: 3000000 });
+  assert.deepEqual(s.dropped.map((d) => d.reason), ['blocked', 'done']); // Multimörser erst 6, Kanone schon umgerüstet
+});
+
+test('Ausrüstung im Plan: sofort, Erz als Kosten, Stufen nacheinander', () => {
+  const puppet = 90000000; // Barbarenpuppe, Stufe 3
+  const e1 = nextEquipStep(village, [], puppet, 18);
+  const e2 = nextEquipStep(village, [e1], puppet, 18);
+  assert.deepEqual([e1.to, e2.to], [4, 5]);
+  const s = simulate(village, game, [e1, e2], r.running, slots, { now });
+  assert.equal(s.steps[0].start, now);
+  assert.deepEqual(s.steps[0].costs, { CommonOre: 400 }); // 3→4
+  assert.deepEqual(s.steps[1].costs, { CommonOre: 600 }); // 4→5
+  assert.equal(s.total.CommonOre, 1000);
 });

@@ -1,6 +1,6 @@
 import { readVillage, analyze, progress, schedule, toIcs, icsCalendar, formatDuration, RESOURCES, GROUPS } from './village.js';
-import { nextStep, simulate, cleanPlan, groupOf } from './planner.js';
-import { BOOST_TYPES, applyBoosts, runningKey } from './boosts.js';
+import { nextStep, nextEquipStep, gearCandidates, simulate, cleanPlan, groupOf } from './planner.js';
+import { BOOST_TYPES, applyBoosts, runningKey, helperReadyAt } from './boosts.js';
 import { magicItems } from './magic.js';
 import { bobStatus, TASK_TEXT } from './bob.js';
 import { oreStatus, ORES } from './ore.js';
@@ -48,6 +48,11 @@ function current() {
   r.running = running;
   for (const g of r.groups) g.items = running.filter((x) => x.group === g.key);
   r.boosts = applied;
+  // Helfer nach eingetragenem Einsatz: nächster Tag zur gleichen Uhrzeit
+  for (const h of r.helpers) {
+    const type = Object.keys(BOOST_TYPES).find((k) => BOOST_TYPES[k].helper === h.id);
+    if (type) h.readyAt = helperReadyAt(h.readyAt, events.filter((e) => e.type === type).map((e) => e.at));
+  }
   const tower = applied.filter((a) => a.type === 'clockTower').at(-1);
   if (tower) r.clockTowerReadyAt = Math.max(r.clockTowerReadyAt || 0, tower.at + game.boosts.clockTower.cooldown * 1000);
   return r;
@@ -102,7 +107,7 @@ function days(sec) {
 function costText(cost, factor = 1) {
   const parts = Object.entries(cost)
     .filter(([, n]) => n > 0)
-    .map(([r, n]) => `${fmtAmount.format(Math.round(n * factor))} ${RESOURCES[r]?.[LANG] || r}`);
+    .map(([r, n]) => `${fmtAmount.format(Math.round(n * factor))} ${(RESOURCES[r] || ORES[r])?.[LANG] || r}`);
   return parts.join(' · ') || '–';
 }
 
@@ -253,7 +258,13 @@ function renderRunning(r, now) {
     const list = el('ul', { class: 'items' }, g.items.map((i) => {
       const left = Math.round((i.finishAt - now) / 1000);
       return el('li', { class: left <= 0 ? 'done' : '' },
-        el('span', { class: 'name' }, i.name, el('span', { class: 'lvl' }, ` → ${i.level}`)),
+        el('span', { class: 'name' }, i.name,
+          el('span', { class: 'lvl' }, i.supercharge ? ` ⚡${i.supercharge}` : ` → ${i.level}`),
+          i.helper || i.goblin ? el('span', { class: 'sub' }, [
+            i.helper ? (i.group === 'lab' ? t('Laborgehilfe arbeitet mit') : t('Lehrling arbeitet mit')) : null,
+            i.recurrentHelper ? t('täglich') : null,
+            i.goblin ? t('Goblin-Bauarbeiter') : null,
+          ].filter(Boolean).join(' · ')) : null),
         el('span', { class: 'time' },
           el('b', {}, left > 0 ? formatDuration(left) : t('fertig ✓')),
           el('span', { class: 'muted' }, when(i.finishAt))),
@@ -373,7 +384,7 @@ function itemRow(i, tf, cf, category) {
         nextText ? el('span', { class: 'sub' }, nextText) : null),
       done ? null : el('span', { class: 'time' }, el('b', {}, i.seconds ? days(i.seconds * tf) : t('sofort')),
         el('span', { class: 'muted' }, costText(i.cost, cf)))),
-    done ? null : el('span', { class: 'adds' },
+    done || i.supercharge ? null : el('span', { class: 'adds' },
       el('button', { class: 'add', title: t('Nächste Stufe planen'), 'aria-label': t('{name} planen', { name: i.name }), onclick: () => addToPlan(i) }, '+'),
       isWall ? el('button', { class: 'add ten', title: t('10 Mauern planen'), 'aria-label': t('10× {name} planen', { name: i.name }), onclick: () => addToPlan(i, 10) }, '+10') : null));
 }
@@ -461,9 +472,42 @@ function renderProgress(r) {
             list.showDone ? c.doneItems.map((i) => itemRow(i, tf, cf, c.key)) : null)
           : el('p', { class: 'muted small' }, t('Alles auf Maximum.')),
       )),
+      v === 'home' ? gearList() : null,
     ));
   }
   $('progress').replaceChildren(listControls(), ...sections, renderBob(), renderBoost(b));
+}
+
+/** Gear-Ups im Heimatdorf (macht der Meisterbauarbeiter) – mit Stand der Voraussetzungen und Plan-Knopf. */
+function gearList() {
+  if (!village.buildings2?.length) return null;
+  const cands = gearCandidates(village, game, LANG);
+  if (!cands.length) return null;
+  const planned = new Set(getPlan().filter((e) => e.kind === 'gear').map((e) => e.id));
+  const key = 'home:gear';
+  return el('details', {
+    class: 'cat', open: openCats.has(key),
+    ontoggle: (e) => { if (e.target.open) openCats.add(key); else openCats.delete(key); },
+  },
+    el('summary', {}, el('span', { class: 'name' }, t('Gear-Ups')),
+      el('span', { class: 'cat-pct' }, `${cands.filter((c) => c.geared).length}/${cands.length}`)),
+    el('ul', { class: 'items' }, cands.map((c) => {
+      const okHome = c.homeLevel >= c.needHome;
+      const okBB = c.bbLevel >= c.needBB;
+      return el('li', { class: c.geared ? 'done-item' : '' },
+        el('span', { class: 'grow' },
+          el('span', { class: 'name' }, c.name, el('span', { class: 'lvl' }, c.geared ? ' ✓' : ''),
+            c.geared ? null : el('span', { class: 'sub' },
+              `${okHome ? '✓' : '○'} ${c.name} ${c.homeLevel}/${c.needHome} · ${okBB ? '✓' : '○'} ${c.bbName} ${c.bbLevel}/${c.needBB}`)),
+          c.geared ? null : el('span', { class: 'time' }, el('b', {}, days(c.seconds)), el('span', { class: 'muted' }, costText(c.cost)))),
+        c.geared ? null : el('span', { class: 'adds' },
+          el('button', {
+            class: 'add', title: t('Gear-Up planen'), 'aria-label': t('{name} planen', { name: c.name }),
+            disabled: planned.has(c.id),
+            onclick: () => { setPlan([...getPlan(), { kind: 'gear', id: c.id }]); toast(t('Gear-Up {name} geplant', { name: c.name })); render(); },
+          }, '+')));
+    })),
+    el('p', { class: 'muted small' }, t('Ein Gear-Up macht der Meisterbauarbeiter – im Plan belegt es einen Nachtdorf-Bauarbeiter.')));
 }
 
 function renderBob() {
@@ -554,6 +598,15 @@ function addToPlan(i, times = 1) {
   render();
 }
 
+function addEquipToPlan(i) {
+  const plan = getPlan();
+  const step = nextEquipStep(village, plan, i.id, i.to);
+  if (!step) { toast(t('{name}: schon alles bis Stufe {n} geplant', { name: i.name, n: i.to })); return; }
+  setPlan([...plan, step]);
+  toast(t('{name} {a}→{b} geplant', { name: i.name, a: step.to - 1, b: step.to }));
+  render();
+}
+
 function movePlan(index, delta) {
   const plan = getPlan();
   const j = index + delta;
@@ -607,35 +660,44 @@ function renderPlan(r, now) {
       el('button', { class: 'ghost', title: t('später'), 'aria-label': t('nach unten'), onclick: () => movePlan(index, 1) }, '↓'),
       el('button', { class: 'ghost', title: t('entfernen'), 'aria-label': t('entfernen'), onclick: () => removePlan(index) }, '✕')));
 
-  const cards = Object.keys(GROUPS).map((g) => {
+  const cards = [...Object.keys(GROUPS), 'equipment'].map((g) => {
     const steps = sim.steps.filter((s) => s.group === g);
-    const blockedHere = [...blocked.values()].filter((d) => game.items[String(d.id)] && groupOf(game.items[String(d.id)]) === g);
+    const groupFor = (d) => (d.kind === 'equip' ? 'equipment' : d.kind === 'gear' ? 'builder_builders' : groupOf(game.items[String(d.id)]));
+    const blockedHere = [...blocked.values()].filter((d) => game.items[String(d.id)] && groupFor(d) === g);
     if (!steps.length && !blockedHere.length) return null;
     const items = [
       ...steps.map((s) => ({ index: s.index, node: row(s.index, [
-        el('span', { class: 'name' }, s.name, el('span', { class: 'lvl' }, ` ${s.from}→${s.to}`),
-          el('br'), el('span', { class: 'muted small' }, s.cost ? costText({ [s.resource]: s.cost }) : t('kostenlos'))),
-        el('span', { class: 'time' }, el('b', {}, t('ab {t}', { t: when(s.start) })),
-          el('span', { class: 'muted' }, t('fertig {t}', { t: when(s.end) }))),
+        el('span', { class: 'name' }, s.kind === 'gear' ? t('{name} umrüsten', { name: s.name }) : s.name,
+          s.kind === 'gear' ? null : el('span', { class: 'lvl' }, ` ${s.from}→${s.to}`),
+          el('br'), el('span', { class: 'muted small' }, Object.keys(s.costs).length ? costText(s.costs) : t('kostenlos'))),
+        s.kind === 'equip'
+          ? el('span', { class: 'time' }, el('b', {}, t('sofort')))
+          : el('span', { class: 'time' }, el('b', {}, t('ab {t}', { t: when(s.start) })),
+            el('span', { class: 'muted' }, t('fertig {t}', { t: when(s.end) }))),
       ]) })),
       ...blockedHere.map((d) => ({ index: d.index, node: row(d.index, [
-        el('span', { class: 'name' }, `${game.items[String(d.id)].name[LANG]} ${d.to - 1}→${d.to}`,
-          el('br'), el('span', { class: 'small' }, t('Erst die Stufe davor planen bzw. weiter nach oben schieben.'))),
+        el('span', { class: 'name' },
+          d.kind === 'gear' ? t('{name} umrüsten', { name: game.items[String(d.id)].name[LANG] }) : `${game.items[String(d.id)].name[LANG]} ${d.to - 1}→${d.to}`,
+          el('br'), el('span', { class: 'small' }, d.kind === 'gear' && d.gear
+            ? t('Voraussetzung fehlt: {a} {b}/{c}, {d} {e}/{f}', { a: d.gear.name, b: d.gear.homeLevel, c: d.gear.needHome, d: d.gear.bbName, e: d.gear.bbLevel, f: d.gear.needBB })
+            : t('Erst die Stufe davor planen bzw. weiter nach oben schieben.'))),
       ], 'blocked') })),
     ].sort((a, b2) => a.index - b2.index);
     return el('section', { class: 'card group' },
-      el('div', { class: 'group-head' }, el('h3', {}, GROUPS[g][LANG]), el('span', { class: 'muted small' }, t('{n} Plätze', { n: slots[g] || 0 }))),
+      el('div', { class: 'group-head' }, el('h3', {}, g === 'equipment' ? t('Ausrüstung') : GROUPS[g][LANG]),
+        g === 'equipment' ? null : el('span', { class: 'muted small' }, t('{n} Plätze', { n: slots[g] || 0 }))),
       el('ul', { class: 'items' }, items.map((x) => x.node)));
   });
 
   const needs = el('section', { class: 'card' },
     el('h3', {}, t('Wann du welche Ressourcen brauchst')),
     el('p', { class: 'muted small' }, t('Zum Start jedes Upgrades muss die Summe bereitliegen. Rechts: Gesamtbedarf bis dahin.')),
-    el('ul', { class: 'items' }, sim.needs.filter((s) => s.cost).map((s) => el('li', {},
-      el('span', { class: 'name' }, el('b', {}, when(s.start)), el('br'),
-        `${s.name} ${s.from}→${s.to}`, el('br'), el('span', { class: 'muted small' }, costText({ [s.resource]: s.cost }))),
+    el('ul', { class: 'items' }, sim.needs.filter((s) => Object.keys(s.costs).length).map((s) => el('li', {},
+      el('span', { class: 'name' }, el('b', {}, s.kind === 'equip' ? t('sofort') : when(s.start)), el('br'),
+        s.kind === 'gear' ? t('{name} umrüsten', { name: s.name }) : `${s.name} ${s.from}→${s.to}`, el('br'),
+        el('span', { class: 'muted small' }, costText(s.costs))),
       el('span', { class: 'time' }, el('span', { class: 'cum' }, t('bis dahin')),
-        el('b', {}, costText({ [s.resource]: s.cumulative[s.resource] })))))),
+        el('b', {}, costText(Object.fromEntries(Object.keys(s.costs).map((k) => [k, s.cumulative[k]])))))))),
     el('dl', { class: 'facts' }, el('dt', {}, t('Gesamt')), el('dd', {}, costText(sim.total))),
     el('div', { class: 'row' },
       el('button', { class: 'primary', onclick: downloadPlanIcs }, t('Starts in Kalender')),
@@ -649,13 +711,16 @@ function downloadPlanIcs() {
   if (!lastSim) return;
   const tag = (village.tag || 'dorf').replace(/[^A-Z0-9]/gi, '');
   const now = Date.now();
-  const events = lastSim.steps.filter((s) => s.start > now).map((s) => ({
-    uid: `${tag}-plan-${s.id}-${s.to}-${Math.round(s.start / 60000)}`,
-    start: s.start,
-    title: t('{name} {a}→{b} starten', { name: s.name, a: s.from, b: s.to }),
-    description: s.cost ? t('{c} bereithalten.', { c: costText({ [s.resource]: s.cost }) }) : '',
-    alarm: t('Jetzt {name} {a}→{b} starten', { name: s.name, a: s.from, b: s.to }),
-  }));
+  const events = lastSim.steps.filter((s) => s.start > now).map((s) => {
+    const what = s.kind === 'gear' ? t('{name} umrüsten', { name: s.name }) : `${s.name} ${s.from}→${s.to}`;
+    return {
+      uid: `${tag}-plan-${s.kind || 'lvl'}-${s.id}-${s.to || 0}-${Math.round(s.start / 60000)}`,
+      start: s.start,
+      title: t('{what} starten', { what }),
+      description: Object.keys(s.costs).length ? t('{c} bereithalten.', { c: costText(s.costs) }) : '',
+      alarm: t('Jetzt {what} starten', { what }),
+    };
+  });
   if (!events.length) { toast(t('Alle geplanten Starts sind schon jetzt möglich.')); return; }
   download(icsCalendar(events), 'clash-plan.ics');
 }
@@ -711,9 +776,12 @@ function renderOre() {
       el('div', { class: 'group-head' }, el('h3', {}, h.name), el('span', { class: 'muted small' }, t('{a}/{b} besessen', { a: h.owned, b: h.items.length }))),
       el('p', { class: 'small' }, oreText(h.ore)),
       el('ul', { class: 'items' }, h.items.map((i) => el('li', { class: i.owned ? '' : 'done-item' },
-        el('span', { class: 'name' }, i.name, el('span', { class: 'sub' },
-          (RARITY[i.rarity] ? t(RARITY[i.rarity]) : i.rarity) + (i.owned ? t(' · Stufe {a} → {b}', { a: i.level, b: i.to }) : t(' · nicht freigeschaltet')))),
-        el('span', { class: 'time small' }, i.owned ? oreText(i.ore) : '–')))))),
+        el('span', { class: 'grow' },
+          el('span', { class: 'name' }, i.name, el('span', { class: 'sub' },
+            (RARITY[i.rarity] ? t(RARITY[i.rarity]) : i.rarity) + (i.owned ? t(' · Stufe {a} → {b}', { a: i.level, b: i.to }) : t(' · nicht freigeschaltet')))),
+          el('span', { class: 'time small' }, i.owned ? oreText(i.ore) : '–')),
+        i.owned && i.level < i.to ? el('span', { class: 'adds' },
+          el('button', { class: 'add', title: t('Nächste Stufe planen'), 'aria-label': t('{name} planen', { name: i.name }), onclick: () => addEquipToPlan(i) }, '+')) : null))))),
   );
 }
 
@@ -753,6 +821,12 @@ $('lang').addEventListener('change', (e) => {
   translatePage();
   if (game) render();
 });
+
+// Hinweis „Zum Home-Bildschirm“: nur im Browser (nicht als installierte App) und bis man ihn schließt
+const STORE_INSTALL = 'planner.installHint';
+const standalone = window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone;
+$('install').hidden = standalone || localStorage.getItem(STORE_INSTALL) === 'closed';
+$('install-close').addEventListener('click', () => { localStorage.setItem(STORE_INSTALL, 'closed'); $('install').hidden = true; });
 
 (async () => {
   translatePage();

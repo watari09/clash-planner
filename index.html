@@ -7,6 +7,12 @@
   <meta name="description" content="Dorf-Export einfügen, laufende Upgrades sehen und als Kalender-Erinnerungen übernehmen.">
   <meta name="theme-color" content="#1d2430">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Upgrade-Planer">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="style.css">
   <script type="module" src="src/app.js"></script>
 </head>
@@ -38,6 +44,16 @@
         <button id="load" class="primary" data-i18n="Übernehmen">Übernehmen</button>
       </div>
       <p id="error" class="error" hidden></p>
+    </section>
+
+    <section id="install" class="card install" hidden>
+      <div class="group-head">
+        <h3 data-i18n="Als App auf den Home-Bildschirm">Als App auf den Home-Bildschirm</h3>
+        <button id="install-close" class="ghost small" aria-label="Schließen">✕</button>
+      </div>
+      <p class="small" data-i18n-html="<b>iPhone (Safari):</b> Teilen-Symbol □↑ → „Zum Home-Bildschirm“."><b>iPhone (Safari):</b> Teilen-Symbol □↑ → „Zum Home-Bildschirm“.</p>
+      <p class="small" data-i18n-html="<b>Android (Chrome):</b> Menü ⋮ → „Zum Startbildschirm hinzufügen“ bzw. „App installieren“."><b>Android (Chrome):</b> Menü ⋮ → „Zum Startbildschirm hinzufügen“ bzw. „App installieren“.</p>
+      <p class="muted small" data-i18n="Dann startet die Seite wie eine App, ohne Browserleiste. Deine Dörfer bleiben gespeichert.">Dann startet die Seite wie eine App, ohne Browserleiste. Deine Dörfer bleiben gespeichert.</p>
     </section>
 
     <div id="switcher" class="row switcher" hidden></div>

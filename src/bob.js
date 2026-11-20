@@ -53,7 +53,8 @@ export function bobStatus(village, game, lang = 'de') {
   const tasks = [];
   const bbChains = []; // Nachtdorf-Bauarbeiter: je Kette nacheinander
   let labSeconds = 0;
-  const gearChains = [];
+  const gearChains = []; // Gear-Ups: macht der Meisterbauarbeiter, also nacheinander auf einem Nachtdorf-Bauarbeiter
+  const homeChains = []; // Vorarbeit im Heimatdorf (Heimatdorf-Bauarbeiter)
   const cost = {};
 
   for (const t of game.bob.tasks) {
@@ -137,7 +138,8 @@ export function bobStatus(village, game, lang = 'de') {
           ].filter(Boolean),
         });
         if (c.bbP.seconds) bbChains.push(c.bbP.seconds);
-        gearChains.push(c.homeP.seconds + c.g.sec);
+        gearChains.push(c.g.sec);
+        if (c.homeP.seconds) homeChains.push(c.homeP.seconds);
         addCost(cost, c.g.cost ? { [c.g.resource]: c.g.cost } : {});
         addCost(cost, c.homeP.cost);
         addCost(cost, c.bbP.cost);
@@ -159,8 +161,9 @@ export function bobStatus(village, game, lang = 'de') {
   addCost(cost, controlCost);
 
   const bbBuilders = Math.max(1, 1 + (b2.some((x) => x.id === 1000078) ? 1 : 0) + (b2.some((x) => x.id === 1000047) ? 1 : 0));
-  const builderSeconds = schedule(bbChains, bbBuilders);
-  const gearSeconds = gearChains.reduce((n, s) => n + s, 0); // Gear-Ups nacheinander
+  const gearSeconds = gearChains.reduce((n, s) => n + s, 0);
+  const builderSeconds = schedule(gearSeconds ? [...bbChains, gearSeconds] : bbChains, bbBuilders);
+  const homeSeconds = Math.max(0, ...homeChains);
   return {
     control: { level: controlLevel, max: controlMax, unlocked: controlLevel >= controlMax, built: controlLevel > 0, requiredHall: control.levels[0][0], cost: controlCost },
     builderHall: bh,
@@ -170,7 +173,8 @@ export function bobStatus(village, game, lang = 'de') {
       bbBuilders,
       labSeconds,
       gearSeconds,
-      seconds: Math.max(builderSeconds, labSeconds, gearSeconds),
+      homeSeconds,
+      seconds: Math.max(builderSeconds, labSeconds, homeSeconds),
       cost,
     },
   };

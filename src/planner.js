@@ -21,6 +21,37 @@ export function groupOf(item) {
   }
 }
 
+/** Gear-Up-fähige Heimatdorf-Gebäude mit Stand der Voraussetzungen. */
+export function gearCandidates(village, game, lang = 'de') {
+  const top = (list, id) => Math.max(0, ...(list || []).filter((e) => e.data === id).map((e) => (e.lvl || 0) + (typeof e.timer === 'number' ? 1 : 0)));
+  return Object.entries(game.items).filter(([, it]) => it.gearUp).map(([id, it]) => {
+    const g = it.gearUp;
+    const geared = (village.buildings || []).some((e) => e.data === Number(id) && e.gear_up);
+    const owned = (village.buildings || []).some((e) => e.data === Number(id));
+    return {
+      id: Number(id),
+      name: it.name[lang] || it.name.en,
+      geared,
+      owned,
+      homeLevel: top(village.buildings, Number(id)),
+      needHome: g.from,
+      bbLevel: top(village.buildings2, g.requires),
+      needBB: g.requiresLevel,
+      bbName: game.items[String(g.requires)]?.name[lang],
+      seconds: g.sec,
+      cost: { [g.resource]: g.cost },
+    };
+  }).filter((c) => c.owned);
+}
+
+/** Nächste Ausrüstungs-Stufe für den Plan (Ausrüstung braucht keinen Bauarbeiter, nur Erz). */
+export function nextEquipStep(village, plan, id, max) {
+  let lvl = (village.equipment || []).find((e) => e.data === id)?.lvl;
+  if (lvl === undefined) return null; // nicht freigeschaltet
+  for (const e of plan) if (e.kind === 'equip' && e.id === id) lvl = Math.max(lvl, e.to);
+  return lvl < max ? { kind: 'equip', id, to: lvl + 1 } : null;
+}
+
 /** Liste der Exemplare je Objekt aus dem Export. Laufende Upgrades zählen schon als Zielstufe. */
 function instances(village) {
   const out = {};
@@ -78,8 +109,35 @@ export function simulate(village, game, plan, running, slots, options = {}) {
 
   const steps = [];
   const dropped = []; // erledigt oder nicht (mehr) möglich
+  const equipLevels = new Map((village.equipment || []).map((x) => [x.data, x.lvl || 1]));
+  const gearCands = new Map(gearCandidates(village, game, lang).map((c) => [c.id, c]));
   for (const [index, e] of plan.entries()) {
     const item = game.items[String(e.id)];
+    if (e.kind === 'equip') {
+      const cur = equipLevels.get(e.id);
+      if (!item || cur === undefined) { dropped.push({ ...e, index, reason: 'unknown' }); continue; }
+      if (cur >= e.to) { dropped.push({ ...e, index, reason: 'done' }); continue; }
+      if (cur !== e.to - 1) { dropped.push({ ...e, index, reason: 'blocked' }); continue; }
+      equipLevels.set(e.id, e.to);
+      const costs = Object.fromEntries(Object.entries(item.ore?.[e.to - 1] || {}).map(([r, n]) => [r, Math.round(n * costFactor)]));
+      steps.push({ index, id: e.id, kind: 'equip', group: 'equipment', name: item.name[lang] || item.name.en, from: e.to - 1, to: e.to, start: now, end: now, costs });
+      continue;
+    }
+    if (e.kind === 'gear') {
+      const c = gearCands.get(e.id);
+      if (!item || !c) { dropped.push({ ...e, index, reason: 'unknown' }); continue; }
+      if (c.geared) { dropped.push({ ...e, index, reason: 'done' }); continue; }
+      if (c.homeLevel < c.needHome || c.bbLevel < c.needBB) { dropped.push({ ...e, index, reason: 'blocked', gear: c }); continue; }
+      const queue = free.builder_builders;
+      if (!queue?.length) { dropped.push({ ...e, index, reason: 'unknown' }); continue; }
+      const start = Math.max(queue.shift(), now);
+      const end = start + Math.round(c.seconds * timeFactor) * 1000;
+      queue.push(end);
+      queue.sort((a, b) => a - b);
+      const costs = Object.fromEntries(Object.entries(c.cost).map(([r, n]) => [r, Math.round(n * costFactor)]));
+      steps.push({ index, id: e.id, kind: 'gear', group: 'builder_builders', name: c.name, start, end, costs });
+      continue;
+    }
     const group = item && groupOf(item);
     if (!item || !group || !free[group]?.length) { dropped.push({ ...e, index, reason: 'unknown' }); continue; }
     if (e.n && (exported[e.id] || []).filter((l) => l >= e.to).length >= e.n) {
@@ -105,8 +163,7 @@ export function simulate(village, game, plan, running, slots, options = {}) {
       to: e.to,
       start,
       end,
-      cost: res === 'Diamonds' ? 0 : Math.round(cost * costFactor),
-      resource: res,
+      costs: res === 'Diamonds' || !cost ? {} : { [res]: Math.round(cost * costFactor) },
     });
   }
 
@@ -114,7 +171,7 @@ export function simulate(village, game, plan, running, slots, options = {}) {
   const needs = [...steps].sort((a, b) => a.start - b.start || a.index - b.index);
   const total = {};
   for (const s of needs) {
-    if (s.cost) total[s.resource] = (total[s.resource] || 0) + s.cost;
+    for (const [r, n] of Object.entries(s.costs)) total[r] = (total[r] || 0) + n;
     s.cumulative = { ...total };
   }
   return { steps, needs, total, dropped };

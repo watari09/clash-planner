@@ -76,3 +76,18 @@ export function applyBoosts(running, events, game, village) {
   list.sort((a, b) => a.finishAt - b.finishAt);
   return { running: list, applied };
 }
+
+/**
+ * Wann ein Helfer nach eingetragenen Einsätzen wieder bereit ist.
+ * Helfer sind einmal am Tag einsetzbar; im Export enden alle Abklingzeiten zur selben Uhrzeit.
+ * Nach einem Einsatz ist der Helfer also zur nächsten solchen Uhrzeit nach dem Einsatz wieder bereit.
+ */
+export function helperReadyAt(exportReadyAt, uses) {
+  let ready = exportReadyAt;
+  for (const at of [...uses].sort((a, b) => a - b)) {
+    if (at < ready) continue; // während der Abklingzeit eingetragen: ändert nichts
+    const days = Math.floor((at - ready) / 86400e3) + 1;
+    ready += days * 86400e3;
+  }
+  return ready;
+}

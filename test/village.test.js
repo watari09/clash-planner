@@ -165,3 +165,36 @@ test('Rush Fixer: Truppen, die erst ab Rathaus 13 freigeschaltet werden, zählen
   assert.ok(lab.items.some((i) => i.name === 'Yeti')); // ab Rathaus 12
   assert.equal(lab.cost.Elixir, 55100000); // ClashTrack: 55.1M
 });
+
+// ---------- Helfer an laufenden Upgrades, Goblin, Supercharges ----------
+
+test('helper_timer: Lehrling (Stufe 3) am Großen Wächter macht ihn früher fertig', () => {
+  const v = structuredClone(full);
+  const warden = v.heroes.find((h) => h.data === 28000002);
+  warden.helper_timer = 1800; // noch 30 min Helfer
+  const r2 = analyze(v, game);
+  const w = r2.running.find((x) => x.id === 28000002);
+  assert.equal(w.finishAt, (full.timestamp + 110355) * 1000 - 3 * 1800e3); // 4-fach → 3 × 30 min gespart
+  assert.equal(w.helper, true);
+});
+
+test('extra: Upgrade des Goblin-Bauarbeiters wird markiert', () => {
+  const v = structuredClone(full);
+  v.buildings.find((b) => b.data === 1000106).extra = true;
+  assert.equal(analyze(v, game).running.find((x) => x.id === 1000106).goblin, true);
+});
+
+test('Supercharges: ab Rathaus 18 für Goldminen auf Max-Stufe', () => {
+  const v = structuredClone(full);
+  v.buildings.find((b) => b.data === 1000001).lvl = 18;
+  const mine = game.items['1000002'].name.de === 'Goldmine' ? 1000002 : Number(Object.keys(game.items).find((k) => game.items[k].name.de === 'Goldmine'));
+  const maxLvl = game.items[String(mine)].levels.length;
+  v.buildings = v.buildings.filter((b) => b.data !== mine);
+  v.buildings.push({ data: mine, lvl: maxLvl, cnt: 2, supercharge: 1 });
+  const sc = progress(v, game).home.categories.find((c) => c.key === 'supercharge');
+  const item = sc.items.find((i) => i.id === mine);
+  const levels = game.items[String(mine)].supercharge.levels;
+  assert.equal(item.count, 2);
+  assert.equal(item.seconds, 2 * (levels[1][0] + levels[2][0]));
+  assert.ok(progress(full, game).home.categories.find((c) => c.key === 'supercharge').items.length === 0); // RH13: keine
+});

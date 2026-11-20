@@ -322,6 +322,16 @@ def main(sha: str):
             if unlock:
                 items[str(gid)]["unlock"] = unlock
 
+    # Supercharges ("mini levels"): zusätzliche Stufen für Gebäude auf Max-Stufe
+    for name, levels in rows(fetch(sha, "logic/mini_levels.csv")):
+        target = levels[0].get("TargetBuilding")
+        if target in ids_by_name:
+            items[str(ids_by_name[target][0])]["supercharge"] = {
+                "townHall": num(levels[0].get("RequiredTownHallLevel")),
+                # je Stufe: [Sekunden, Kosten, Ressource]
+                "levels": [[seconds(d), num(d.get("BuildCost")), d.get("BuildResource") or levels[0].get("BuildResource", "")] for d in levels],
+            }
+
     for gid, levels, first in pending_gear:
         gear = gear_up(levels, first, ids_by_name)
         if gear:
