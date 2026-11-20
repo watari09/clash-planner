@@ -203,3 +203,8 @@ select.inline {
 }
 .install { border-color: var(--accent); }
 .install p { margin: 4px 0; }
+.assign .row { align-items: center; }
+.assign .check { margin: 2px 0 8px; }
+.assign .row { flex-wrap: wrap; }
+.assign select { flex: 1 1 100%; }
+.assign .row button { flex: 1 1 100%; }

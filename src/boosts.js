@@ -58,7 +58,9 @@ export function applyBoosts(running, events, game, village) {
   const exportedAt = village.timestamp * 1000;
   const list = running.map((r) => ({ ...r, key: runningKey(r), originalFinishAt: r.finishAt }));
   const applied = [];
-  for (const ev of [...events].sort((a, b) => a.at - b.at)) {
+  const exportDayEnd = exportedAt + ((village.helpers || [])[0]?.helper_cooldown || 0) * 1000;
+  const sorted = [...events].sort((a, b) => a.at - b.at);
+  for (const [i, ev] of sorted.entries()) {
     if (ev.at < exportedAt) continue;
     const def = BOOST_TYPES[ev.type];
     if (!def || !game.boosts?.[ev.type]) continue;
@@ -69,6 +71,11 @@ export function applyBoosts(running, events, game, village) {
       if (def.single && r.key !== ev.target) continue;
       const before = r.finishAt;
       r.finishAt = boostedFinish(r.finishAt, ev.at, mult, sec);
+      if (ev.recurrent && def.helper) {
+        // fest zugeteilt: ab dem Ende dieses Arbeitstags jeden Tag wieder 1 h
+        const day = helperDay(exportedAt, exportDayEnd, sorted.slice(0, i + 1).filter((x) => x.at >= exportedAt));
+        r.finishAt = recurrentFinish(r.finishAt, day.dayEnd, mult, sec);
+      }
       saved += before - r.finishAt;
     }
     applied.push({ ...ev, saved, mult, sec });
@@ -77,17 +84,43 @@ export function applyBoosts(running, events, game, village) {
   return { running: list, applied };
 }
 
+export const WORK_DAY = 23 * 3600e3;
+export const HELPER_TYPES = ['builderApprentice', 'labAssistant'];
+
 /**
- * Wann ein Helfer nach eingetragenen Einsätzen wieder bereit ist.
- * Helfer sind einmal am Tag einsetzbar; im Export enden alle Abklingzeiten zur selben Uhrzeit.
- * Nach einem Einsatz ist der Helfer also zur nächsten solchen Uhrzeit nach dem Einsatz wieder bereit.
+ * Arbeitstag der Helfer (laut Supercell): Er dauert 23 h und beginnt, sobald ein Helfer zugewiesen wird.
+ * Alle Helfer teilen sich diesen Arbeitstag; jeder kann darin einmal arbeiten.
+ * Im Export steht nur der gemeinsame Countdown – wer darin schon gearbeitet hat, ist unbekannt.
+ * Vorsichtige Annahme: Läuft beim Export ein Arbeitstag, gelten alle Helfer als schon eingesetzt.
+ *
+ * @param dayEnd  Ende des Arbeitstags laut Export (Export-Zeit + helper_cooldown)
+ * @param events  eingetragene Helfer-Einsätze [{ type, at }]
+ * @returns { dayEnd, used: Set, readyAt(type), nextDayStart(at) }
  */
-export function helperReadyAt(exportReadyAt, uses) {
-  let ready = exportReadyAt;
-  for (const at of [...uses].sort((a, b) => a - b)) {
-    if (at < ready) continue; // während der Abklingzeit eingetragen: ändert nichts
-    const days = Math.floor((at - ready) / 86400e3) + 1;
-    ready += days * 86400e3;
+export function helperDay(exportedAt, dayEnd, events) {
+  let end = dayEnd;
+  let used = new Set(dayEnd > exportedAt ? HELPER_TYPES : []);
+  for (const ev of [...events].filter((e) => HELPER_TYPES.includes(e.type)).sort((a, b) => a.at - b.at)) {
+    if (ev.at >= end) { // neuer Arbeitstag beginnt mit diesem Einsatz
+      end = ev.at + WORK_DAY;
+      used = new Set([ev.type]);
+    } else {
+      used.add(ev.type);
+    }
   }
-  return ready;
+  return {
+    dayEnd: end,
+    used,
+    readyAt: (type) => (used.has(type) ? end : 0),
+  };
+}
+
+/**
+ * Fest zugeteilter Helfer: arbeitet jeden Arbeitstag 1 h (mult-fach) am selben Upgrade, bis es fertig ist.
+ * Der nächste Arbeitstag beginnt jeweils, sobald der vorige endet (`firstDay`), dann alle 23 h.
+ */
+export function recurrentFinish(finishAt, firstDay, mult, sec) {
+  let f = finishAt;
+  for (let start = firstDay; start < f; start += WORK_DAY) f = boostedFinish(f, start, mult, sec);
+  return f;
 }

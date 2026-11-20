@@ -53,12 +53,55 @@ test('Boosts vor dem Export-Zeitpunkt werden ignoriert', () => {
   assert.equal(applied.length, 0);
 });
 
-import { helperReadyAt } from '../src/boosts.js';
+import { helperDay, recurrentFinish, WORK_DAY } from '../src/boosts.js';
 
-test('Helfer nach Einsatz: wieder bereit zur gleichen Uhrzeit am nächsten Tag', () => {
-  const ready = t0 + 44982e3; // laut Export
-  assert.equal(helperReadyAt(ready, []), ready);
-  assert.equal(helperReadyAt(ready, [ready + 2 * H]), ready + 24 * H);
-  assert.equal(helperReadyAt(ready, [ready + 30 * H]), ready + 48 * H);
-  assert.equal(helperReadyAt(ready, [ready - H]), ready); // noch in der Abklingzeit
+test('Arbeitstag: gemeinsamer 23-h-Tag, jeder Helfer einmal pro Tag (Beispiel von Supercell)', () => {
+  const t = 1e12;
+  // alle bereit; Lehrling startet den Arbeitstag
+  let d = helperDay(t, t, [{ type: 'builderApprentice', at: t }]);
+  assert.equal(d.dayEnd, t + WORK_DAY);
+  assert.equal(d.readyAt('builderApprentice'), t + WORK_DAY);
+  assert.equal(d.readyAt('labAssistant'), 0); // darf im selben Arbeitstag noch arbeiten
+  // 4 h später Laborgehilfe: Arbeitstag läuft weiter, endet unverändert
+  d = helperDay(t, t, [{ type: 'builderApprentice', at: t }, { type: 'labAssistant', at: t + 4 * H }]);
+  assert.equal(d.dayEnd, t + WORK_DAY);
+  assert.equal(d.readyAt('labAssistant'), t + WORK_DAY);
+  // nach Ende des Arbeitstags beginnt mit dem nächsten Einsatz ein neuer
+  d = helperDay(t, t, [{ type: 'builderApprentice', at: t }, { type: 'builderApprentice', at: t + 30 * H }]);
+  assert.equal(d.dayEnd, t + 30 * H + WORK_DAY);
+});
+
+test('Arbeitstag laut Export läuft noch: vorsichtig beide Helfer als eingesetzt', () => {
+  const d = helperDay(t0, t0 + 44982e3, []);
+  assert.equal(d.readyAt('builderApprentice'), t0 + 44982e3);
+  assert.equal(d.readyAt('labAssistant'), t0 + 44982e3);
+});
+
+test('Fest zugeteilt: jeden Arbeitstag 1 h extra, bis fertig', () => {
+  // 100 h Rest, Helfer 4-fach → spart 3 h pro Arbeitstag
+  const f = recurrentFinish(t0 + 100 * H, t0, 4, 3600);
+  // Arbeitstage bei 0, 23, 46, 69 h → 4 × 3 h = 12 h gespart, fertig bei 88 h (der Tag ab 92 h kommt zu spät)
+  assert.equal(f, t0 + 88 * H);
+});
+
+test('Fest zugeteilt im Export (recurrent_helper) macht den Großen Wächter früher fertig', () => {
+  const v = structuredClone(village);
+  v.heroes.find((h) => h.data === 28000002).recurrent_helper = true;
+  const w = analyze(v, game).running.find((x) => x.id === 28000002);
+  // Rest 110355 s; erster Arbeitstag beginnt nach 44982 s, Lehrling Stufe 3 → 3 h je Tag
+  assert.equal(w.finishAt, recurrentFinish(t0 + 110355e3, t0 + 44982e3, 4, 3600));
+  assert.equal(w.finishAt, t0 + 110355e3 - 3 * H); // nur ein Arbeitstag fällt in die ~30,7 h Restzeit
+});
+
+test('Eingetragener Lehrling "fest zuteilen" wirkt auch an den Folgetagen', () => {
+  const v = structuredClone(village);
+  v.helpers.forEach((h) => { h.helper_cooldown = 0; }); // alle bereit
+  const r2 = analyze(v, game);
+  const warden = r2.running.find((x) => x.id === 28000002);
+  const once = applyBoosts(r2.running, [{ type: 'builderApprentice', at: t0, target: runningKey(warden) }], game, v);
+  const daily = applyBoosts(r2.running, [{ type: 'builderApprentice', at: t0, target: runningKey(warden), recurrent: true }], game, v);
+  const f1 = once.running.find((x) => x.id === 28000002).finishAt;
+  const f2 = daily.running.find((x) => x.id === 28000002).finishAt;
+  assert.equal(f1, warden.finishAt - 3 * H);
+  assert.equal(f2, warden.finishAt - 3 * H - 3 * H); // + ein weiterer Arbeitstag nach 23 h (Rest war ~30 h)
 });

@@ -1,6 +1,6 @@
 import { readVillage, analyze, progress, schedule, toIcs, icsCalendar, formatDuration, RESOURCES, GROUPS } from './village.js';
 import { nextStep, nextEquipStep, gearCandidates, simulate, cleanPlan, groupOf } from './planner.js';
-import { BOOST_TYPES, applyBoosts, runningKey, helperReadyAt } from './boosts.js';
+import { BOOST_TYPES, applyBoosts, runningKey, helperDay } from './boosts.js';
 import { magicItems } from './magic.js';
 import { bobStatus, TASK_TEXT } from './bob.js';
 import { oreStatus, ORES } from './ore.js';
@@ -48,10 +48,12 @@ function current() {
   r.running = running;
   for (const g of r.groups) g.items = running.filter((x) => x.group === g.key);
   r.boosts = applied;
-  // Helfer nach eingetragenem Einsatz: nächster Tag zur gleichen Uhrzeit
+  // Gemeinsamer 23-h-Arbeitstag der Helfer; jeder Helfer einmal pro Arbeitstag
+  const day = helperDay(r.exportedAt, r.helpers[0]?.readyAt ?? r.exportedAt, events);
+  r.helperDayEnd = day.dayEnd;
   for (const h of r.helpers) {
     const type = Object.keys(BOOST_TYPES).find((k) => BOOST_TYPES[k].helper === h.id);
-    if (type) h.readyAt = helperReadyAt(h.readyAt, events.filter((e) => e.type === type).map((e) => e.at));
+    if (type) h.readyAt = day.readyAt(type);
   }
   const tower = applied.filter((a) => a.type === 'clockTower').at(-1);
   if (tower) r.clockTowerReadyAt = Math.max(r.clockTowerReadyAt || 0, tower.at + game.boosts.clockTower.cooldown * 1000);
@@ -169,13 +171,13 @@ function render() {
   const age = now - r.exportedAt;
   const ageText = age < 60000 ? t('gerade eben') : t('vor {d}', { d: formatDuration(Math.round(age / 1000)) });
 
-  $('summary').replaceChildren(
+  $('summary').replaceChildren(...[
     el('p', { class: 'big' }, t('Rathaus {n}', { n: r.townHall }), r.builderHall ? t(' · Meisterhütte {n}', { n: r.builderHall }) : ''),
     r.tag ? el('p', { class: 'muted' }, t('Spieler {tag}', { tag: r.tag })) : null,
     el('p', { class: age > 12 * 3600e3 ? 'warn' : 'muted' },
       t('Export {age} ({when})', { age: ageText, when: when(r.exportedAt) }),
       age > 12 * 3600e3 ? t(' – für aktuelle Zeiten neu exportieren.') : ''),
-  );
+  ].filter(Boolean));
 
   renderRunning(r, now);
   renderExtras(r, now);
@@ -283,13 +285,14 @@ function renderExtras(r, now) {
         left > 0 ? el('span', { class: 'muted' }, when(at)) : null));
   };
   const ready = r.helpers.filter((h) => h.id === 93000000 || h.id === 93000001).map((h) => row(t('{name} (Stufe {n})', { name: h.name, n: h.level }), h.readyAt));
+  if (r.helperDayEnd > now) ready.push(el('li', { class: 'muted small' }, t('Arbeitstag der Helfer endet {t} – jeder Helfer kann pro Arbeitstag einmal arbeiten.', { t: when(r.helperDayEnd) })));
   if (r.clockTowerReadyAt) ready.push(row(t('Uhrenturm'), r.clockTowerReadyAt));
 
   // Eintragen: welche Boosts passen zu diesem Dorf?
   const slots = slotsByGroup(r, now);
   const available = Object.entries(BOOST_TYPES).filter(([, d]) => d.groups.some((g) => (slots[g] || 0) > 0));
-  const add = (type, target) => {
-    setBoosts([...getBoosts(), { type, at: Date.now(), ...(target ? { target } : {}) }]);
+  const add = (type, target, recurrent) => {
+    setBoosts([...getBoosts(), { type, at: Date.now(), ...(target ? { target } : {}), ...(recurrent ? { recurrent: true } : {}) }]);
     render();
     const last = current().boosts.at(-1);
     const name = BOOST_TYPES[type][LANG] || BOOST_TYPES[type].de;
@@ -310,13 +313,16 @@ function renderExtras(r, now) {
     const label = d[LANG] || d.de;
     const select = el('select', { 'aria-label': t('{b}: Upgrade wählen', { b: label }) },
       options.map((x) => el('option', { value: x.key }, `${x.name} → ${x.level}`)));
-    return el('div', { class: 'row assign' }, select,
-      el('button', { class: 'ghost small', onclick: () => add(type, select.value), ...lock(type, d) },
-        readyAt(type, d) > now ? t('{b}: bereit {t}', { b: label, t: when(readyAt(type, d)) }) : t('{b} zuweisen', { b: label })));
+    const fixed = el('input', { type: 'checkbox' });
+    return el('div', { class: 'assign' },
+      el('div', { class: 'row' }, select,
+        el('button', { class: 'ghost small', onclick: () => add(type, select.value, fixed.checked), ...lock(type, d) },
+          readyAt(type, d) > now ? t('{b}: bereit {t}', { b: label, t: when(readyAt(type, d)) }) : t('{b} zuweisen', { b: label }))),
+      el('label', { class: 'check small' }, fixed, t(' fest zuteilen (jeden Arbeitstag, bis es fertig ist)')));
   });
 
   const logged = (r.boosts || []).map((b, i) => el('li', {},
-    el('span', { class: 'name' }, BOOST_TYPES[b.type]?.[LANG] || b.type, el('br'), el('span', { class: 'muted small' }, when(b.at))),
+    el('span', { class: 'name' }, BOOST_TYPES[b.type]?.[LANG] || b.type, b.recurrent ? t(' (fest)') : '', el('br'), el('span', { class: 'muted small' }, when(b.at))),
     el('span', { class: 'time' }, el('b', {}, b.saved ? `−${formatDuration(Math.round(b.saved / 1000))}` : t('ohne Wirkung')),
       el('button', {
         class: 'ghost small',
@@ -329,7 +335,7 @@ function renderExtras(r, now) {
     el('p', { class: 'muted small' }, t('Gerade benutzt? Eintragen, dann rechnet die Seite die Fertig-Zeiten neu – auch für Kalender und Plan. Mit dem nächsten Export verfallen die Einträge (dann stecken sie schon in den Timern).')),
     el('div', { class: 'row boosts' }, buttons),
     ...singles.filter(Boolean),
-    logged.length ? el('ul', { class: 'items' }, logged) : null,
+    ...(logged.length ? [el('ul', { class: 'items' }, logged)] : []),
   );
   $('extras').hidden = false;
 }
@@ -475,7 +481,7 @@ function renderProgress(r) {
       v === 'home' ? gearList() : null,
     ));
   }
-  $('progress').replaceChildren(listControls(), ...sections, renderBob(), renderBoost(b));
+  $('progress').replaceChildren(...[listControls(), ...sections, renderBob(), renderBoost(b)].filter(Boolean));
 }
 
 /** Gear-Ups im Heimatdorf (macht der Meisterbauarbeiter) – mit Stand der Voraussetzungen und Plan-Knopf. */

@@ -1,4 +1,4 @@
-import { boostedFinish } from './boosts.js';
+import { boostedFinish, recurrentFinish } from './boosts.js';
 
 // Auswertung des Dorf-JSON aus Clash of Clans (Einstellungen → „Dorfdaten im JSON-Format exportieren“).
 // Reine Funktionen ohne DOM, damit sie auch in Node getestet werden können.
@@ -81,6 +81,8 @@ export function analyze(village, game, lang = 'de') {
     const lvl = (village.helpers || []).find((h) => h.data === id)?.lvl || 1;
     return (game.boosts?.[type]?.extraByLevel?.[lvl - 1] ?? lvl) + 1;
   };
+  // Gemeinsamer Arbeitstag der Helfer: endet laut Export nach helper_cooldown
+  const dayEnd = exportedAt + ((village.helpers || [])[0]?.helper_cooldown || 0) * 1000;
   for (const [section, group] of Object.entries(SECTIONS)) {
     for (const e of village[section] || []) {
       if (typeof e.timer !== 'number') continue;
@@ -90,6 +92,10 @@ export function analyze(village, game, lang = 'de') {
       let finishAt = exportedAt + e.timer * 1000;
       if (typeof e.helper_timer === 'number' && e.helper_timer > 0) {
         finishAt = boostedFinish(finishAt, exportedAt, helperMult(group), e.helper_timer);
+      }
+      // Fest zugeteilter Helfer: ab dem nächsten Arbeitstag jeden Tag 1 h, bis das Upgrade fertig ist
+      if (e.recurrent_helper) {
+        finishAt = recurrentFinish(finishAt, Math.max(dayEnd, exportedAt), helperMult(group), 3600);
       }
       running.push({
         id: e.data,
