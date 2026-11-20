@@ -208,3 +208,25 @@ select.inline {
 .assign .row { flex-wrap: wrap; }
 .assign select { flex: 1 1 100%; }
 .assign .row button { flex: 1 1 100%; }
+
+/* Heimatdorf gold, Nachtdorf blau */
+.card.group.home, .items li.home { border-left: 3px solid var(--accent); }
+.card.group.bb, .items li.bb { border-left: 3px solid #4f8cff; }
+.items li.home, .items li.bb { padding-left: 10px; }
+.bar.thin { display: block; height: 4px; margin: 5px 0 2px; max-width: 220px; }
+.items li.stack { flex-direction: column; gap: 2px; }
+.row-line { display: flex; justify-content: space-between; gap: 10px; }
+.next { font-size: .85rem; color: var(--text); }
+.next.none { color: var(--muted); font-style: italic; }
+.prep { display: block; font-size: .8rem; color: var(--accent); }
+.dash-free { border-color: var(--free); }
+.hint-card { border-style: dashed; }
+.summary-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin: 2px 2px 10px; }
+.summary-line .big { font-size: 1.05rem; }
+.switcher { flex-wrap: nowrap; gap: 6px; }
+.switcher > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.switcher button { flex: none; }
+.cal { display: flex; flex-direction: column; gap: 4px; }
+.cal button { align-self: flex-start; }
+.then { display: block; font-size: .8rem; color: var(--muted); }
+.bar.thin { width: 180px; max-width: 60vw; }

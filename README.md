@@ -13,6 +13,7 @@ Webseite: Dorf-Export aus Clash of Clans einfügen →
 - Erz-Rechner: glänzendes, glühendes und Sternenerz je Ausrüstung bis zum Maximum oder zur aktuellen Schmied-Stufe
 - Listen sortierbar (Restzeit, schnellste/günstigste nächste Stufe), fertige ein-/ausblendbar, Stufen jedes Exemplars, Mauern in 10er-Schritten planen
 - mehrere Dörfer, Rabatt (Goldpass/Season-Boost) einstellbar
+- Dashboard (Start): als Nächstes fertig, was laut Plan danach auf dem Platz startet und was bereitzulegen ist; freie Plätze; Hinweis, wenn noch nichts geplant ist
 - Supercharges (ab Rathaus 17/18) im Fortschritt; Gear-Ups und Ausrüstung im Plan
 - Helfer an laufenden Upgrades (`helper_timer`) und Goblin-Bauarbeiter (`extra`) aus dem Export berücksichtigt
 - Als App auf den Home-Bildschirm (Manifest + Hinweis)

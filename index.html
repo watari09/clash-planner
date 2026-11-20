@@ -29,7 +29,7 @@
   </header>
 
   <main>
-    <section id="input" class="card">
+    <section id="input" class="card" hidden>
       <h2 data-i18n="Dorfdaten einfügen">Dorfdaten einfügen</h2>
       <ol class="steps">
         <li data-i18n="In Clash unter Einstellungen „Dorfdaten im JSON-Format exportieren“ wählen – die Daten landen in der Zwischenablage.">In Clash unter Einstellungen „Dorfdaten im JSON-Format exportieren“ wählen – die Daten landen in der Zwischenablage.</li>
@@ -59,23 +59,25 @@
     <div id="switcher" class="row switcher" hidden></div>
 
     <section id="result" hidden>
-      <div class="card summary">
-        <div id="summary"></div>
-        <div class="row">
-          <button id="ics" class="primary" data-i18n="In Kalender übernehmen">In Kalender übernehmen</button>
-        </div>
-        <p class="hint" data-i18n="Lädt eine Kalender-Datei mit einer Erinnerung pro laufendem Upgrade. Nach einem neuen Export einfach nochmal – bestehende Termine werden aktualisiert.">Lädt eine Kalender-Datei mit einer Erinnerung pro laufendem Upgrade. Nach einem neuen Export einfach nochmal – bestehende Termine werden aktualisiert.</p>
-      </div>
+      <div id="summary" class="summary-line"></div>
 
       <nav class="tabs" role="tablist">
-        <button role="tab" data-tab="overview"><span data-i18n="Übersicht">Übersicht</span></button>
+        <button role="tab" data-tab="dash"><span data-i18n="Start">Start</span></button>
+        <button role="tab" data-tab="overview"><span data-i18n="Laufend">Laufend</span></button>
         <button role="tab" data-tab="progress"><span data-i18n="Fortschritt">Fortschritt</span></button>
         <button role="tab" data-tab="plan"><span data-i18n="Plan">Plan</span> <span id="plan-count" class="badge" hidden></span></button>
         <button role="tab" data-tab="magic"><span data-i18n="Bücher">Bücher</span></button>
         <button role="tab" data-tab="ore"><span data-i18n="Erz">Erz</span></button>
       </nav>
 
-      <div data-panel="overview">
+      <div data-panel="dash" hidden>
+        <div id="dash"></div>
+      </div>
+      <div data-panel="overview" hidden>
+        <div class="card cal">
+          <button id="ics" class="primary" data-i18n="In Kalender übernehmen">In Kalender übernehmen</button>
+          <p class="hint" data-i18n="Lädt eine Kalender-Datei mit einer Erinnerung pro laufendem Upgrade. Nach einem neuen Export einfach nochmal – bestehende Termine werden aktualisiert.">Lädt eine Kalender-Datei mit einer Erinnerung pro laufendem Upgrade. Nach einem neuen Export einfach nochmal – bestehende Termine werden aktualisiert.</p>
+        </div>
         <div id="groups"></div>
         <div id="extras" class="card"></div>
       </div>

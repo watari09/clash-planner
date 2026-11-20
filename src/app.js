@@ -1,4 +1,5 @@
-import { readVillage, analyze, progress, schedule, toIcs, icsCalendar, formatDuration, RESOURCES, GROUPS } from './village.js';
+import { readVillage, analyze, progress, schedule, toIcs, icsCalendar, formatDuration, levelEntry, RESOURCES, GROUPS } from './village.js';
+import { dashboard } from './dashboard.js';
 import { nextStep, nextEquipStep, gearCandidates, simulate, cleanPlan, groupOf } from './planner.js';
 import { BOOST_TYPES, applyBoosts, runningKey, helperDay } from './boosts.js';
 import { magicItems } from './magic.js';
@@ -148,6 +149,7 @@ function load(text) {
   localStorage.setItem(STORE_CURRENT, tag);
   $('manual-box').hidden = true;
   $('json').value = '';
+  showInput = false;
   select(tag);
 }
 
@@ -161,9 +163,12 @@ function select(tag) {
 
 // ---------- Anzeige ----------
 
+let showInput = false; // Einfügen-Karte: immer ohne Dorf, sonst nur auf Wunsch
+
 function render() {
   formats();
   $('result').hidden = !village;
+  $('input').hidden = !!village && !showInput;
   renderSwitcher();
   if (!village || !game) return;
   const r = current();
@@ -172,20 +177,20 @@ function render() {
   const ageText = age < 60000 ? t('gerade eben') : t('vor {d}', { d: formatDuration(Math.round(age / 1000)) });
 
   $('summary').replaceChildren(...[
-    el('p', { class: 'big' }, t('Rathaus {n}', { n: r.townHall }), r.builderHall ? t(' · Meisterhütte {n}', { n: r.builderHall }) : ''),
-    r.tag ? el('p', { class: 'muted' }, t('Spieler {tag}', { tag: r.tag })) : null,
-    el('p', { class: age > 12 * 3600e3 ? 'warn' : 'muted' },
+    el('span', { class: 'big' }, t('Rathaus {n}', { n: r.townHall }), r.builderHall ? t(' · Meisterhütte {n}', { n: r.builderHall }) : ''),
+    el('span', { class: age > 12 * 3600e3 ? 'warn small' : 'muted small' },
       t('Export {age} ({when})', { age: ageText, when: when(r.exportedAt) }),
       age > 12 * 3600e3 ? t(' – für aktuelle Zeiten neu exportieren.') : ''),
-  ].filter(Boolean));
+  ]);
 
   renderRunning(r, now);
   renderExtras(r, now);
   renderProgress(r);
   renderPlan(r, now);
+  renderDash(r, now);
   renderMagic(r, now);
   renderOre();
-  showTab(localStorage.getItem(STORE_TAB) || 'overview');
+  showTab(localStorage.getItem(STORE_TAB) || 'dash');
 }
 
 function showTab(tab) {
@@ -221,6 +226,10 @@ function renderSwitcher() {
       ? el('select', { 'aria-label': t('Dorf wählen'), onchange: (e) => select(e.target.value) },
         tags.map((t) => el('option', { value: t, selected: t === current }, t)))
       : el('span', { class: 'muted' }, t('Gespeichert: {tag}', { tag: current })),
+    el('button', {
+      class: 'ghost small',
+      onclick: () => { showInput = !showInput; render(); if (showInput) $('input').scrollIntoView({ behavior: 'smooth' }); },
+    }, showInput ? t('Schließen') : t('Neu einfügen')),
     el('button', {
       class: 'ghost small',
       onclick: () => {
@@ -262,6 +271,7 @@ function renderRunning(r, now) {
       return el('li', { class: left <= 0 ? 'done' : '' },
         el('span', { class: 'name' }, i.name,
           el('span', { class: 'lvl' }, i.supercharge ? ` ⚡${i.supercharge}` : ` → ${i.level}`),
+          runningShare(i, now) != null ? el('span', { class: 'bar thin' }, el('span', { style: `width:${runningShare(i, now)}%` })) : null,
           i.helper || i.goblin ? el('span', { class: 'sub' }, [
             i.helper ? (i.group === 'lab' ? t('Laborgehilfe arbeitet mit') : t('Lehrling arbeitet mit')) : null,
             i.recurrentHelper ? t('täglich') : null,
@@ -273,8 +283,19 @@ function renderRunning(r, now) {
       );
     }));
     if (!g.items.length) list.append(el('li', { class: 'muted' }, t('Nichts in Arbeit')));
-    return el('section', { class: 'card group' }, head, list);
+    return el('section', { class: `card group ${g.key.startsWith('builder') || g.key === 'star_lab' ? 'bb' : 'home'}` }, head, list);
   }));
+}
+
+/** Anteil eines laufenden Upgrades, der schon erledigt ist (für den Balken). */
+function runningShare(i, now) {
+  const item = game.items[String(i.id)];
+  if (!item) return null;
+  const total = i.supercharge
+    ? item.supercharge?.levels?.[i.supercharge - 1]?.[0]
+    : levelEntry(item, i.level)?.[1];
+  if (!total) return null;
+  return Math.max(0, Math.min(100, 100 - ((i.finishAt - now) / 1000 / total) * 100));
 }
 
 function renderExtras(r, now) {
@@ -737,6 +758,60 @@ function download(text, name) {
   document.body.append(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+// ---------- Dashboard ----------
+
+function renderDash(r, now) {
+  const slots = slotsByGroup(r, now);
+  const sim = lastSim || simulate(village, game, getPlan(), r.running, slots, { now, lang: LANG });
+  const d = dashboard(r.running, sim, slots, { now });
+  const gname = (g) => GROUPS[g]?.[LANG] || g;
+  const stepText = (s) => (s.kind === 'gear' ? t('{name} umrüsten', { name: s.name }) : `${s.name} ${s.from}→${s.to}`);
+  const nextLine = (s) => (s
+    ? el('span', { class: 'next' }, t('Danach: {what}', { what: stepText(s) }),
+      Object.keys(s.costs).length ? el('span', { class: 'prep' }, t('bereitlegen: {c}', { c: costText(s.costs) })) : null,
+      s.then ? el('span', { class: 'then' }, t('dann ({t}): {what}', { t: when(s.then.start), what: stepText(s.then) })) : null)
+    : el('span', { class: 'next none' }, t('Danach: nichts geplant')));
+
+  const cards = [];
+  if (d.free.length) {
+    cards.push(el('section', { class: 'card dash-free' },
+      el('h3', {}, t('Jetzt frei')),
+      el('ul', { class: 'items' }, d.free.map((f) => el('li', { class: 'stack' },
+        el('span', { class: 'name' }, el('b', {}, gname(f.group))),
+        f.next
+          ? el('span', { class: 'next' }, t('Jetzt starten: {what}', { what: stepText(f.next) }),
+            Object.keys(f.next.costs).length ? el('span', { class: 'prep' }, costText(f.next.costs)) : null)
+          : el('span', { class: 'next none' }, t('Nichts geplant für diesen Platz')))))));
+  }
+  cards.push(el('section', { class: 'card' },
+    el('h3', {}, t('Als Nächstes fertig')),
+    d.upcoming.length
+      ? el('ul', { class: 'items' }, d.upcoming.map((u) => el('li', { class: `stack ${u.group.startsWith('builder') || u.group === 'star_lab' ? 'bb' : 'home'}` },
+        el('span', { class: 'row-line' },
+          el('span', { class: 'name' }, u.name, el('span', { class: 'lvl' }, u.supercharge ? ` ⚡${u.supercharge}` : ` → ${u.level}`)),
+          el('span', { class: 'time' }, el('b', {}, formatDuration(Math.round((u.finishAt - now) / 1000))), el('span', { class: 'muted' }, when(u.finishAt)))),
+        el('span', { class: 'sub' }, gname(u.group)),
+        nextLine(u.next))))
+      : el('p', { class: 'muted' }, t('Gerade läuft nichts.'))));
+  if (!d.planned) {
+    cards.push(el('section', { class: 'card hint-card' },
+      el('h3', {}, t('Noch kein Plan')),
+      el('p', { class: 'muted small' }, t('Im Reiter „Fortschritt“ Upgrades mit + vormerken – dann steht hier zu jedem frei werdenden Platz, was danach startet und was du bereitlegen musst.')),
+      el('button', { class: 'ghost small', onclick: () => showTab('progress') }, t('Zum Fortschritt'))));
+  } else {
+    cards.push(el('section', { class: 'card' },
+      el('h3', {}, t('In den nächsten 24 h bereitlegen')),
+      d.soonCount
+        ? el('p', {}, el('b', {}, costText(d.prepare)), el('span', { class: 'muted small' }, ` · ${t('{n} geplante Starts', { n: d.soonCount })}`))
+        : el('p', { class: 'muted small' }, t('In den nächsten 24 h startet nichts aus deinem Plan.'))));
+  }
+  // Helfer und Uhrenturm kurz
+  const readyNow = r.helpers.filter((h) => (h.id === 93000000 || h.id === 93000001) && h.readyAt <= now).map((h) => h.name);
+  if (r.clockTowerReadyAt && r.clockTowerReadyAt <= now) readyNow.push(t('Uhrenturm'));
+  if (readyNow.length) cards.push(el('section', { class: 'card dash-free' }, el('p', {}, el('b', {}, t('Bereit: ')), readyNow.join(', '))));
+  $('dash').replaceChildren(...cards);
 }
 
 // ---------- Magische Gegenstände ----------
