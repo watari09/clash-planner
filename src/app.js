@@ -134,10 +134,9 @@ $('paste').addEventListener('click', async () => {
     if (!text) throw new Error('leer');
     load(text);
   } catch {
-    // Kein Zugriff auf die Zwischenablage (Browser/Berechtigung) → Textfeld anbieten
-    $('manual-box').hidden = false;
-    $('json').focus();
-    showError('Zwischenablage nicht lesbar – bitte ins Feld einfügen (lange tippen → Einsetzen).');
+    // Häufigster Fall: Der Browser hat beim ersten Mal um Erlaubnis gefragt und den Versuch dabei abgebrochen.
+    // Kein Auto-Fokus aufs Textfeld, sonst springt die Tastatur auf.
+    showError('Die Zwischenablage ließ sich nicht lesen. Hat dein Browser gerade um Erlaubnis gefragt? Dann erlauben und nochmal auf „Einfügen“ tippen. Sonst über „Von Hand einfügen“.');
   }
 });
 $('manual').addEventListener('click', () => { $('manual-box').hidden = false; $('json').focus(); });
