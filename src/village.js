@@ -136,34 +136,23 @@ function icsText(s) {
 }
 
 /**
- * Ein Termin pro laufendem Upgrade, mit Erinnerung zur Fertig-Zeit.
- * Die UID ist stabil (Spieler + Objekt + Fertig-Minute), damit ein erneuter Import
- * dieselben Termine aktualisiert statt sie zu verdoppeln.
+ * Kalender-Datei aus Terminen { uid, start, title, description, alarm }.
+ * Stabile UIDs sorgen dafür, dass ein erneuter Import aktualisiert statt verdoppelt.
  */
-export function toIcs(result, now = Date.now()) {
-  const lines = [
-    'BEGIN:VCALENDAR',
-    'VERSION:2.0',
-    'PRODID:-//clash-planner//DE',
-    'CALSCALE:GREGORIAN',
-    'METHOD:PUBLISH',
-  ];
-  const tag = (result.tag || 'dorf').replace(/[^A-Z0-9]/gi, '');
-  for (const r of result.running) {
-    if (r.finishAt <= now) continue;
-    const minute = Math.round(r.finishAt / 60000);
-    const group = GROUPS[r.group]?.de || '';
+export function icsCalendar(events, now = Date.now()) {
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//clash-planner//DE', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH'];
+  for (const e of events) {
     lines.push(
       'BEGIN:VEVENT',
-      `UID:${tag}-${r.id}-${minute}@clash-planner`,
+      `UID:${e.uid}@clash-planner`,
       `DTSTAMP:${icsDate(now)}`,
-      `DTSTART:${icsDate(r.finishAt)}`,
-      `DTEND:${icsDate(r.finishAt + 15 * 60000)}`,
-      `SUMMARY:${icsText(`${r.name} (Stufe ${r.level}) fertig`)}`,
-      `DESCRIPTION:${icsText(`${group} – ein Platz ist wieder frei.`)}`,
+      `DTSTART:${icsDate(e.start)}`,
+      `DTEND:${icsDate(e.start + 15 * 60000)}`,
+      `SUMMARY:${icsText(e.title)}`,
+      `DESCRIPTION:${icsText(e.description || '')}`,
       'BEGIN:VALARM',
       'ACTION:DISPLAY',
-      `DESCRIPTION:${icsText(`${r.name} ist fertig`)}`,
+      `DESCRIPTION:${icsText(e.alarm || e.title)}`,
       'TRIGGER:PT0S',
       'END:VALARM',
       'END:VEVENT',
@@ -171,6 +160,18 @@ export function toIcs(result, now = Date.now()) {
   }
   lines.push('END:VCALENDAR');
   return lines.join('\r\n') + '\r\n';
+}
+
+/** Ein Termin pro laufendem Upgrade, mit Erinnerung zur Fertig-Zeit. */
+export function toIcs(result, now = Date.now()) {
+  const tag = (result.tag || 'dorf').replace(/[^A-Z0-9]/gi, '');
+  return icsCalendar(result.running.filter((r) => r.finishAt > now).map((r) => ({
+    uid: `${tag}-${r.id}-${Math.round(r.finishAt / 60000)}`,
+    start: r.finishAt,
+    title: `${r.name} (Stufe ${r.level}) fertig`,
+    description: `${GROUPS[r.group]?.de || ''} – ein Platz ist wieder frei.`,
+    alarm: `${r.name} ist fertig`,
+  })), now);
 }
 
 // ---------- Anzeige-Helfer ----------
@@ -281,7 +282,10 @@ export function progress(village, game, lang = 'de') {
       const max = maxLevel(item, cap);
       if (!max) continue;
       const first = item.first || 1;
-      const agg = { id, name: item.name[lang] || item.name.en, count: 0, from: Infinity, to: max, seconds: 0, cost: {} };
+      const agg = {
+        id, name: item.name[lang] || item.name.en, count: 0, from: Infinity, to: max, seconds: 0, cost: {},
+        missing: instances.filter((i) => i.lvl === 0 && i.timer === undefined).length, // noch nicht gebaut
+      };
       for (const ins of instances) {
         const total = max - first + 1;
         const cur = Math.min(Math.max(ins.lvl, first - 1), max);

@@ -42,14 +42,27 @@
         <div class="row">
           <button id="ics" class="primary">In Kalender übernehmen</button>
         </div>
-        <p class="hint">Lädt eine Kalender-Datei mit einer Erinnerung pro Upgrade. Nach einem neuen Export einfach nochmal – bestehende Termine werden aktualisiert.</p>
+        <p class="hint">Lädt eine Kalender-Datei mit einer Erinnerung pro laufendem Upgrade. Nach einem neuen Export einfach nochmal – bestehende Termine werden aktualisiert.</p>
       </div>
-      <h2 class="section-title">Laufende Upgrades</h2>
-      <div id="groups"></div>
-      <div id="extras" class="card"></div>
-      <h2 class="section-title">Fortschritt</h2>
-      <div id="progress"></div>
+
+      <nav class="tabs" role="tablist">
+        <button role="tab" data-tab="overview">Übersicht</button>
+        <button role="tab" data-tab="progress">Fortschritt</button>
+        <button role="tab" data-tab="plan">Plan <span id="plan-count" class="badge" hidden></span></button>
+      </nav>
+
+      <div data-panel="overview">
+        <div id="groups"></div>
+        <div id="extras" class="card"></div>
+      </div>
+      <div data-panel="progress" hidden>
+        <div id="progress"></div>
+      </div>
+      <div data-panel="plan" hidden>
+        <div id="plan"></div>
+      </div>
     </section>
+    <div id="toast" class="toast" hidden></div>
   </main>
 
   <footer>

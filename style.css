@@ -123,3 +123,27 @@ details.cat .bar { height: 5px; }
   width: 4.5em; font: inherit; color: var(--text); background: var(--bg);
   border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
 }
+
+.tabs { display: flex; gap: 6px; margin: 4px 0 12px; position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 6px 0; }
+.tabs button { flex: 1; padding: 9px 6px; }
+.tabs button[aria-selected="true"] { background: var(--card); border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.badge { display: inline-block; min-width: 1.4em; padding: 0 5px; border-radius: 99px; background: var(--accent); color: #1b1400; font-size: .75rem; font-weight: 700; }
+
+.add {
+  flex: none; width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  color: var(--accent); border-color: var(--accent); font-size: 1.2rem; line-height: 1; align-self: center;
+}
+.items li .grow { flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 10px; }
+
+.plan-step .tools { display: flex; gap: 4px; align-self: center; }
+.plan-step .tools button { padding: 4px 9px; font-size: .85rem; }
+.plan-step.blocked .name { color: var(--warn); }
+.cum { font-size: .78rem; color: var(--muted); }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 12px; font-weight: 600;
+  box-shadow: 0 6px 20px rgba(0,0,0,.4); z-index: 10; max-width: 90vw;
+}
+
+[hidden] { display: none !important; }

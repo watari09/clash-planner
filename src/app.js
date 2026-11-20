@@ -1,4 +1,5 @@
-import { readVillage, analyze, progress, toIcs, formatDuration, RESOURCES } from './village.js';
+import { readVillage, analyze, progress, toIcs, icsCalendar, formatDuration, RESOURCES, GROUPS } from './village.js';
+import { nextStep, simulate, cleanPlan, groupOf } from './planner.js';
 
 // localStorage-Schlüssel
 const STORE_VILLAGES = 'planner.villages'; // { tag: json-text }
@@ -6,10 +7,13 @@ const STORE_CURRENT = 'planner.current'; // tag des angezeigten Dorfs
 const STORE_SLOTS = 'planner.slots'; // vom Nutzer geänderte Platzanzahl je Gruppe
 const STORE_BOOST = 'planner.boost'; // { time: %, cost: % } z. B. Goldpass/Season-Boost
 const LEGACY_VILLAGE = 'planner.village'; // alte Version: nur ein Dorf
+const STORE_TAB = 'planner.tab';
+const planKey = () => `planner.plan.${village?.tag || 'Dorf'}`; // [{ id, to, n }] je Dorf
 
 const $ = (id) => document.getElementById(id);
 let game = null;
 let village = null;
+const openCats = new Set(); // aufgeklappte Kategorien bleiben beim Neuzeichnen offen
 
 // ---------- Speicher ----------
 
@@ -17,6 +21,8 @@ const readJson = (key, fallback) => {
   try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; }
 };
 const villages = () => readJson(STORE_VILLAGES, {});
+const getPlan = () => readJson(planKey(), []);
+const setPlan = (plan) => localStorage.setItem(planKey(), JSON.stringify(plan));
 const boost = () => ({ time: 0, cost: 0, ...readJson(STORE_BOOST, {}) });
 
 function migrate() {
@@ -128,6 +134,31 @@ function render() {
   renderRunning(r, now);
   renderExtras(r, now);
   renderProgress(r);
+  renderPlan(r, now);
+  showTab(localStorage.getItem(STORE_TAB) || 'overview');
+}
+
+function showTab(tab) {
+  localStorage.setItem(STORE_TAB, tab);
+  for (const b of document.querySelectorAll('.tabs [data-tab]')) b.setAttribute('aria-selected', String(b.dataset.tab === tab));
+  for (const p of document.querySelectorAll('[data-panel]')) p.hidden = p.dataset.panel !== tab;
+}
+
+let toastTimer = 0;
+function toast(msg) {
+  $('toast').textContent = msg;
+  $('toast').hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { $('toast').hidden = true; }, 2200);
+}
+
+/** Plätze je Gruppe wie in der Übersicht: Schätzung bzw. eigene Angabe, mindestens so viele wie gerade laufen. */
+function slotsByGroup(r, now) {
+  const overrides = readJson(STORE_SLOTS, {});
+  return Object.fromEntries(r.groups.map((g) => [
+    g.key,
+    Math.max(overrides[g.key] ?? g.slots, g.items.filter((i) => i.finishAt > now).length),
+  ]));
 }
 
 function renderSwitcher() {
@@ -238,17 +269,23 @@ function renderProgress(r) {
         el('dt', {}, 'Kosten'),
         el('dd', {}, costText(allCost, cf)),
       ),
-      x.categories.filter((c) => c.total > 0).map((c) => el('details', { class: 'cat' },
+      x.categories.filter((c) => c.total > 0).map((c) => el('details', {
+        class: 'cat',
+        open: openCats.has(`${v}:${c.key}`),
+        ontoggle: (e) => { if (e.target.open) openCats.add(`${v}:${c.key}`); else openCats.delete(`${v}:${c.key}`); },
+      },
         el('summary', {},
           el('span', { class: 'name' }, c.title),
           el('span', { class: 'cat-pct' }, c.items.length ? `${String(c.percent).replace('.', ',')} %` : 'fertig ✓')),
         bar(c.percent),
         c.items.length
           ? el('ul', { class: 'items' }, c.items.map((i) => el('li', {},
-            el('span', { class: 'name' }, i.name, i.count > 1 ? el('span', { class: 'lvl' }, ` ×${i.count}`) : null,
-              el('span', { class: 'lvl' }, ` ${i.from}→${i.to}`)),
-            el('span', { class: 'time' }, el('b', {}, days(i.seconds * tf)),
-              el('span', { class: 'muted' }, costText(i.cost, cf))))))
+            el('span', { class: 'grow' },
+              el('span', { class: 'name' }, i.name, i.count > 1 ? el('span', { class: 'lvl' }, ` ×${i.count}`) : null,
+                el('span', { class: 'lvl' }, ` ${i.from}→${i.to}`)),
+              el('span', { class: 'time' }, el('b', {}, days(i.seconds * tf)),
+                el('span', { class: 'muted' }, costText(i.cost, cf)))),
+            el('button', { class: 'add', title: 'Nächste Stufe planen', 'aria-label': `${i.name} planen`, onclick: () => addToPlan(i) }, '+'))))
           : el('p', { class: 'muted small' }, 'Alles auf Maximum.'),
       )),
     ));
@@ -280,15 +317,139 @@ function renderBoost(b) {
   );
 }
 
-// ---------- Kalender ----------
+// ---------- Plan ----------
 
-function downloadIcs() {
-  const r = analyze(village, game);
-  const blob = new Blob([toIcs(r)], { type: 'text/calendar;charset=utf-8' });
-  const a = el('a', { href: URL.createObjectURL(blob), download: 'clash-upgrades.ics' });
+function addToPlan(i) {
+  const plan = getPlan();
+  const step = nextStep(village, plan, i.id, i.to, i.missing);
+  if (!step) {
+    toast(`${i.name}: schon alles bis Stufe ${i.to} geplant`);
+    return;
+  }
+  plan.push(step);
+  setPlan(plan);
+  toast(`${i.name} ${step.to - 1}→${step.to} geplant`);
+  render();
+}
+
+function movePlan(index, delta) {
+  const plan = getPlan();
+  const j = index + delta;
+  if (j < 0 || j >= plan.length) return;
+  [plan[index], plan[j]] = [plan[j], plan[index]];
+  setPlan(plan);
+  render();
+}
+
+function removePlan(index) {
+  const plan = getPlan();
+  plan.splice(index, 1);
+  setPlan(plan);
+  render();
+}
+
+let lastSim = null;
+
+function renderPlan(r, now) {
+  const b = boost();
+  const slots = slotsByGroup(r, now);
+  let plan = getPlan();
+  let sim = simulate(village, game, plan, r.running, slots, { now, timeFactor: 1 - b.time / 100, costFactor: 1 - b.cost / 100 });
+  // Laut neuem Export erledigte Einträge entfernen
+  const cleaned = cleanPlan(plan, sim.dropped);
+  if (cleaned.length !== plan.length) {
+    const n = plan.length - cleaned.length;
+    plan = cleaned;
+    setPlan(plan);
+    sim = simulate(village, game, plan, r.running, slots, { now, timeFactor: 1 - b.time / 100, costFactor: 1 - b.cost / 100 });
+    toast(`${n} geplante${n === 1 ? 's Upgrade ist' : ' Upgrades sind'} schon erledigt`);
+  }
+  lastSim = sim;
+
+  $('plan-count').textContent = String(plan.length);
+  $('plan-count').hidden = !plan.length;
+
+  if (!plan.length) {
+    $('plan').replaceChildren(el('section', { class: 'card' },
+      el('h3', {}, 'Noch nichts geplant'),
+      el('p', { class: 'muted' }, 'Im Reiter „Fortschritt“ eine Kategorie aufklappen und beim gewünschten Upgrade auf + tippen. Jedes Tippen plant die nächste Stufe.'),
+      el('p', { class: 'muted small' }, 'Der Plan verteilt die Upgrades auf deine Bauarbeiter bzw. das Labor – sobald einer frei wird – und zeigt, wann du welche Ressourcen bereithalten musst.')));
+    return;
+  }
+
+  const blocked = new Map(sim.dropped.filter((d) => d.reason === 'blocked').map((d) => [d.index, d]));
+  const row = (index, content, cls = '') => el('li', { class: `plan-step ${cls}` },
+    el('span', { class: 'grow' }, ...content),
+    el('span', { class: 'tools' },
+      el('button', { class: 'ghost', title: 'früher', 'aria-label': 'nach oben', onclick: () => movePlan(index, -1) }, '↑'),
+      el('button', { class: 'ghost', title: 'später', 'aria-label': 'nach unten', onclick: () => movePlan(index, 1) }, '↓'),
+      el('button', { class: 'ghost', title: 'entfernen', 'aria-label': 'entfernen', onclick: () => removePlan(index) }, '✕')));
+
+  const cards = Object.keys(GROUPS).map((g) => {
+    const steps = sim.steps.filter((s) => s.group === g);
+    const blockedHere = [...blocked.values()].filter((d) => game.items[String(d.id)] && groupOf(game.items[String(d.id)]) === g);
+    if (!steps.length && !blockedHere.length) return null;
+    const items = [
+      ...steps.map((s) => ({ index: s.index, node: row(s.index, [
+        el('span', { class: 'name' }, s.name, el('span', { class: 'lvl' }, ` ${s.from}→${s.to}`),
+          el('br'), el('span', { class: 'muted small' }, s.cost ? costText({ [s.resource]: s.cost }) : 'kostenlos')),
+        el('span', { class: 'time' }, el('b', {}, `ab ${when(s.start)}`),
+          el('span', { class: 'muted' }, `fertig ${when(s.end)}`)),
+      ]) })),
+      ...blockedHere.map((d) => ({ index: d.index, node: row(d.index, [
+        el('span', { class: 'name' }, `${game.items[String(d.id)].name.de} ${d.to - 1}→${d.to}`,
+          el('br'), el('span', { class: 'small' }, 'Erst die Stufe davor planen bzw. weiter nach oben schieben.')),
+      ], 'blocked') })),
+    ].sort((a, b2) => a.index - b2.index);
+    return el('section', { class: 'card group' },
+      el('div', { class: 'group-head' }, el('h3', {}, GROUPS[g].de), el('span', { class: 'muted small' }, `${slots[g] || 0} Plätze`)),
+      el('ul', { class: 'items' }, items.map((x) => x.node)));
+  });
+
+  const needs = el('section', { class: 'card' },
+    el('h3', {}, 'Wann du welche Ressourcen brauchst'),
+    el('p', { class: 'muted small' }, 'Zum Start jedes Upgrades muss die Summe bereitliegen. Rechts: Gesamtbedarf bis dahin.'),
+    el('ul', { class: 'items' }, sim.needs.filter((s) => s.cost).map((s) => el('li', {},
+      el('span', { class: 'name' }, el('b', {}, when(s.start)), el('br'),
+        `${s.name} ${s.from}→${s.to}`, el('br'), el('span', { class: 'muted small' }, costText({ [s.resource]: s.cost }))),
+      el('span', { class: 'time' }, el('span', { class: 'cum' }, 'bis dahin'),
+        el('b', {}, costText({ [s.resource]: s.cumulative[s.resource] })))))),
+    el('dl', { class: 'facts' }, el('dt', {}, 'Gesamt'), el('dd', {}, costText(sim.total))),
+    el('div', { class: 'row' },
+      el('button', { class: 'primary', onclick: downloadPlanIcs }, 'Starts in Kalender'),
+      el('button', { class: 'ghost', onclick: () => { if (confirm('Ganzen Plan löschen?')) { setPlan([]); render(); } } }, 'Plan leeren')),
+  );
+
+  $('plan').replaceChildren(...cards.filter(Boolean), needs);
+}
+
+function downloadPlanIcs() {
+  if (!lastSim) return;
+  const tag = (village.tag || 'dorf').replace(/[^A-Z0-9]/gi, '');
+  const now = Date.now();
+  const events = lastSim.steps.filter((s) => s.start > now).map((s) => ({
+    uid: `${tag}-plan-${s.id}-${s.to}-${Math.round(s.start / 60000)}`,
+    start: s.start,
+    title: `${s.name} ${s.from}→${s.to} starten`,
+    description: s.cost ? `${costText({ [s.resource]: s.cost })} bereithalten.` : '',
+    alarm: `Jetzt ${s.name} ${s.from}→${s.to} starten`,
+  }));
+  if (!events.length) { toast('Alle geplanten Starts sind schon jetzt möglich.'); return; }
+  download(icsCalendar(events), 'clash-plan.ics');
+}
+
+function download(text, name) {
+  const blob = new Blob([text], { type: 'text/calendar;charset=utf-8' });
+  const a = el('a', { href: URL.createObjectURL(blob), download: name });
   document.body.append(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+// ---------- Kalender ----------
+
+function downloadIcs() {
+  download(toIcs(analyze(village, game)), 'clash-upgrades.ics');
 }
 
 // ---------- Start ----------
@@ -307,6 +468,7 @@ $('paste').addEventListener('click', async () => {
 $('manual').addEventListener('click', () => { $('manual-box').hidden = false; $('json').focus(); });
 $('load').addEventListener('click', () => load($('json').value));
 $('ics').addEventListener('click', downloadIcs);
+for (const b of document.querySelectorAll('.tabs [data-tab]')) b.addEventListener('click', () => showTab(b.dataset.tab));
 
 (async () => {
   game = await (await fetch('data/game.json')).json();
