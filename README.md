@@ -3,7 +3,7 @@
 Webseite: Dorf-Export aus Clash of Clans einfügen →
 
 - laufende Upgrades mit sekundengenauer Fertig-Zeit, als Kalender-Erinnerungen (`.ics`) übernehmbar
-- Fortschritt bis zum Maximum des aktuellen Rathauses bzw. der Meisterhütte: Prozent (nach Bauzeit), Bauarbeiter- und Labor-Tage, Kosten je Ressource, Liste aller offenen Upgrades
+- Fortschritt bis zum Maximum des aktuellen oder eines gewählten Rathauses bzw. der Meisterhütte (inkl. Rathaus-Upgrade und allem, was bis dahin freigeschaltet wird): Prozent (nach Bauzeit), Bauarbeiter- und Labor-Tage, Kosten je Ressource, Liste aller offenen Upgrades
 - Upgrade-Plan: gewünschte nächste Upgrades vormerken; sie werden auf die Bauarbeiter bzw. Labore verteilt, sobald diese frei werden → Start-/Endzeiten und wann welche Ressourcen bereitliegen müssen (auch als Kalender)
 - Helfer & Boosts eintragen (Lehrling, Laborgehilfe, Bauarbeiter-/Forschungs-/Begleitertrank, Bauarbeiterbissen, Forschersuppe, Uhrenturm, Uhrenturm-Trank) → Fertig-Zeiten werden exakt neu berechnet, auch für Kalender und Plan
 - mehrere Dörfer, Rabatt (Goldpass/Season-Boost) einstellbar

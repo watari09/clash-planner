@@ -192,6 +192,36 @@ def boosts(sha: str) -> dict:
     }
 
 
+def unlock_hall(kind: str, first: dict, ids_by_name: dict, items: dict):
+    """
+    Ab welchem Rathaus (bzw. welcher Meisterhütte) ein Objekt freigeschaltet werden kann – oder None,
+    wenn es nicht regulär freischaltbar ist (Event-, Super-Truppen, Veraltetes, interne Einträge).
+    Truppen/Zauber: Stufe der Kaserne/Zauberfabrik → deren Rathaus-Voraussetzung.
+    Helden: Rathaus der ersten Stufe. Begleiter: Begleiterhaus-Stufe → Rathaus.
+    """
+    if first.get("Deprecated") == "TRUE" or first.get("EnabledByCalendar") or first.get("EnabledBySuperLicence"):
+        return None
+
+    def building_req(name, level):
+        ref = ids_by_name.get(name)
+        if not ref or level < 1:
+            return None
+        levels = items[str(ref[0])]["levels"]
+        return levels[min(level, len(levels)) - 1][0] or None
+
+    if kind in ("troop", "spell"):
+        # beschworene/Fallen-Einheiten und gesperrte Einträge sind nicht trainierbar
+        if first.get("DisableProduction") == "TRUE" or first.get("IsSecondaryTroop") == "TRUE":
+            return None
+        level = num(first.get("BarrackLevel")) if kind == "troop" else num(first.get("SpellForgeLevel"))
+        return building_req(first.get("ProductionBuilding", ""), level)
+    if kind == "hero":
+        return num(first.get("RequiredTownHallLevel")) or None
+    if kind == "pet":
+        return building_req("Pet House", num(first.get("LaboratoryLevel")))
+    return None
+
+
 def main(sha: str):
     texts = {"de": {}, "en": {}}
     for lang, path in (("de", "localization/de.csv"), ("en", "localization/texts.csv")):
@@ -223,6 +253,9 @@ def main(sha: str):
             first_level = num(first.get("VisualLevel"), 1) or 1
             if first_level > 1:
                 items[str(gid)]["first"] = first_level
+            unlock = unlock_hall(kind, first, ids_by_name, items)
+            if unlock:
+                items[str(gid)]["unlock"] = unlock
 
     version = json.loads(fetch(sha, "fingerprint.json")).get("version")
     out = {"version": version, "fingerprint": sha, "generated": date.today().isoformat(),

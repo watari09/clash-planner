@@ -11,6 +11,7 @@ const LEGACY_VILLAGE = 'planner.village'; // alte Version: nur ein Dorf
 const STORE_TAB = 'planner.tab';
 const planKey = () => `planner.plan.${village?.tag || 'Dorf'}`; // [{ id, to, n }] je Dorf
 const boostKey = () => `planner.boosts.${village?.tag || 'Dorf'}`; // [{ type, at, target? }] je Dorf
+const targetKey = () => `planner.target.${village?.tag || 'Dorf'}`; // { home, builder } Ziel-Rathaus/-Meisterhütte
 
 const $ = (id) => document.getElementById(id);
 let game = null;
@@ -298,7 +299,8 @@ function renderExtras(r, now) {
 }
 
 function renderProgress(r) {
-  const p = progress(village, game);
+  const targets = readJson(targetKey(), {});
+  const p = progress(village, game, 'de', targets);
   const b = boost();
   const tf = 1 - b.time / 100;
   const cf = 1 - b.cost / 100;
@@ -316,12 +318,27 @@ function renderProgress(r) {
     const allCost = {};
     for (const c of x.categories) for (const [res, n] of Object.entries(c.cost)) allCost[res] = (allCost[res] || 0) + n;
 
+    const hallItem = game.items[v === 'home' ? '1000001' : '1000034'];
+    const maxHall = hallItem.levels.length;
+    const picker = el('select', {
+      class: 'target', 'aria-label': `Ziel-${title}`,
+      onchange: (e) => {
+        const t = readJson(targetKey(), {});
+        t[v] = Number(e.target.value);
+        localStorage.setItem(targetKey(), JSON.stringify(t));
+        render();
+      },
+    }, Array.from({ length: maxHall - x.current + 1 }, (_, i) => x.current + i).map((n) =>
+      el('option', { value: n, selected: n === x.hall }, n === x.current ? `${title} ${n} (aktuell)` : `${title} ${n}`)));
     sections.push(el('section', { class: 'card progress' },
       el('div', { class: 'group-head' },
-        el('h3', {}, `Fortschritt ${title} ${x.hall}`),
+        el('h3', {}, 'Fortschritt bis'),
         el('span', { class: 'pct' }, `${String(x.percent).replace('.', ',')} %`)),
+      picker,
       bar(x.percent),
-      el('p', { class: 'muted small' }, `Anteil der Bauzeit bis zum Maximum für ${title} ${x.hall}. Nach Stufen gezählt: ${String(x.levelPercent).replace('.', ',')} %.`),
+      el('p', { class: 'muted small' }, `Anteil der Bauzeit bis zum Maximum für ${title} ${x.hall}`,
+        x.hall > x.current ? ` – inklusive ${title}-Upgrade und allem, was bis dahin freigeschaltet wird` : '',
+        `. Nach Stufen gezählt: ${String(x.levelPercent).replace('.', ',')} %.`),
       el('dl', { class: 'facts' },
         el('dt', {}, 'Bauarbeiter'),
         el('dd', {}, `${days((x.builderSeconds * tf) / builders)} mit ${builders} Bauarbeiter${builders === 1 ? '' : 'n'}`),

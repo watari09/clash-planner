@@ -229,24 +229,32 @@ const isWall = (item) => item.name.en === 'Wall' || item.name.en === 'BB Wall' |
  * - Laufende Upgrades: die laufende Stufe zählt mit Restzeit und ohne Kosten (schon bezahlt).
  * - Mit Edelsteinen gekaufte Plätze (z. B. Bauhütten) und Rathaus/Meisterhütte selbst zählen nicht.
  */
-export function progress(village, game, lang = 'de') {
+export function progress(village, game, lang = 'de', targets = {}) {
   const out = {};
   for (const v of ['home', 'builder']) {
     const b = v === 'home' ? village.buildings : village.buildings2 || [];
     const hallId = v === 'home' ? IDS.townHall : IDS.builderHall;
-    const hall = levelOf(b, hallId);
-    if (!hall) continue;
+    const current = levelOf(b, hallId);
+    if (!current) continue;
+    // Ziel: gewähltes Rathaus bzw. gewählte Meisterhütte, nie unter der aktuellen Stufe
+    const hallItem = game.items[String(hallId)];
+    const hall = Math.min(Math.max(targets[v] || current, current), hallItem.levels.length + (hallItem.first || 1) - 1);
     const labId = v === 'home' ? IDS.laboratory : IDS.starLab;
     const labCap = maxLevel(game.items[String(labId)], hall);
     const petCap = v === 'home' ? maxLevel(game.items[String(IDS.petHouse)], hall) : 0;
     const limits = game.limits[v][String(Math.min(hall, Math.max(...Object.keys(game.limits[v]).map(Number))))] || {};
 
-    const rows = []; // je Objekt-Art: { id, name, cat, instances: [{lvl, timer}], cap }
-    const add = (id, cat, cap, instances) => {
+    const rows = []; // je Objekt-Art: { id, name, cat, instances: [{lvl, timer}], cap, max? }
+    const add = (id, cat, cap, instances, max) => {
       const item = game.items[String(id)];
-      if (!item || id === hallId) return;
-      rows.push({ id, item, cat, cap, instances });
+      if (!item || (id === hallId && max === undefined)) return;
+      rows.push({ id, item, cat, cap, instances, max });
     };
+    // Rathaus/Meisterhütte selbst nur, wenn ein höheres Ziel gewählt ist
+    if (hall > current) {
+      const e = b.find((x) => x.data === hallId);
+      add(hallId, 'buildings', hall, [{ lvl: current, timer: e?.timer }], hall);
+    }
 
     // Gebäude und Fallen aus der Grenzen-Tabelle
     const listsB = v === 'home' ? ['buildings', 'traps'] : ['buildings2', 'traps2'];
@@ -270,16 +278,27 @@ export function progress(village, game, lang = 'de') {
     const unitLists = v === 'home'
       ? [['heroes', 'heroes', hall], ['units', 'lab', labCap], ['spells', 'lab', labCap], ['siege_machines', 'lab', labCap], ['pets', 'pets', petCap]]
       : [['heroes2', 'heroes', hall], ['units2', 'lab', labCap]];
+    const seen = new Set();
     for (const [section, cat, cap] of unitLists) {
-      for (const e of village[section] || []) add(e.data, cat, cap, [{ lvl: e.lvl || 0, timer: e.timer }]);
+      for (const e of village[section] || []) {
+        seen.add(e.data);
+        add(e.data, cat, cap, [{ lvl: e.lvl || 0, timer: e.timer }]);
+      }
+    }
+    // Noch nicht freigeschaltete Truppen, Zauber, Helden, Begleiter bis zum Ziel-Rathaus
+    const catOf = (it) => (it.kind === 'hero' ? 'heroes' : it.kind === 'pet' ? 'pets' : 'lab');
+    const capOf = (it) => (it.kind === 'hero' ? hall : it.kind === 'pet' ? petCap : labCap);
+    for (const [id, it] of Object.entries(game.items)) {
+      if (it.village !== v || !it.unlock || it.unlock > hall || seen.has(Number(id))) continue;
+      add(Number(id), catOf(it), capOf(it), [{ lvl: 0 }]);
     }
 
     const cats = Object.fromEntries(CATEGORIES[v].map(([k, t]) => [k, {
       key: k, title: t[lang] || t.en, done: 0, total: 0, seconds: 0, totalSeconds: 0, cost: {}, items: [],
     }]));
 
-    for (const { id, item, cat, cap, instances } of rows) {
-      const max = maxLevel(item, cap);
+    for (const { id, item, cat, cap, instances, max: fixedMax } of rows) {
+      const max = fixedMax ?? maxLevel(item, cap);
       if (!max) continue;
       const first = item.first || 1;
       const agg = {
@@ -321,6 +340,7 @@ export function progress(village, game, lang = 'de') {
     const sum = (keys) => list.filter((c) => keys.includes(c.key)).reduce((n, c) => n + c.seconds, 0);
     out[v] = {
       hall,
+      current,
       // Hauptwert: Anteil der gesamten Bauzeit bis zum Maximum, der schon erledigt ist
       percent: totalSeconds ? pct(1 - leftSeconds / totalSeconds) : 100,
       levelPercent: total ? pct(done / total) : 100,

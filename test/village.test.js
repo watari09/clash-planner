@@ -101,3 +101,30 @@ test('Fortschritt: Mauern ohne Bauzeit, aber mit Kosten', () => {
   assert.equal(bb.seconds, 0);
   assert.ok(Object.values(bb.cost).some((n) => n > 0));
 });
+
+// ---------- Fortschritt bis zu einem Ziel-Rathaus ----------
+
+test('Ziel Rathaus 14: Rathaus-Upgrade, Begleiterhaus und neue Freischaltungen zählen mit', () => {
+  const t = progress(full, game, 'de', { home: 14 });
+  assert.equal(t.home.hall, 14);
+  assert.equal(t.home.current, 13);
+  const names = (key) => t.home.categories.find((c) => c.key === key).items.map((i) => i.name);
+  assert.ok(names('buildings').includes('Rathaus'));
+  assert.ok(names('buildings').includes('Begleiterhaus'));
+  assert.ok(names('pets').includes('L.A.S.S.I.'));
+  assert.ok(names('lab').includes('Druide'));
+  const druid = t.home.categories.find((c) => c.key === 'lab').items.find((i) => i.name === 'Druide');
+  assert.equal(druid.from, 0);
+  assert.ok(t.home.percent < p.home.percent, `${t.home.percent} < ${p.home.percent}`);
+});
+
+test('Aktuelles Rathaus: noch nicht freigeschaltete Squads zählen mit, Freigeschaltetes nicht doppelt', () => {
+  const lab = p.home.categories.find((c) => c.key === 'lab').items;
+  assert.ok(lab.some((i) => i.name === 'Ballon-Squad' && i.from === 0));
+  assert.ok(!lab.some((i) => i.id === 4000020)); // interne Fallen-Einheit "Lakai"
+  assert.ok(!p.home.categories.find((c) => c.key === 'buildings').items.some((i) => i.name === 'Rathaus'));
+});
+
+test('Ziel unter dem aktuellen Rathaus wird ignoriert', () => {
+  assert.equal(progress(full, game, 'de', { home: 5 }).home.hall, 13);
+});
