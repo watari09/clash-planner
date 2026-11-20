@@ -100,3 +100,37 @@ test('Ausrüstung im Plan: sofort, Erz als Kosten, Stufen nacheinander', () => {
   assert.deepEqual(s.steps[1].costs, { CommonOre: 600 }); // 4→5
   assert.equal(s.total.CommonOre, 1000);
 });
+
+import { planInstances } from '../src/planner.js';
+const DOUBLE_CANNON = 1000043; // Nachtdorf-Doppelkanone: 4, 5, 5 (BB-Export)
+
+test('Gezielt planen: bestimmtes Exemplar statt des niedrigsten', () => {
+  const lvls = planInstances(village, [], DOUBLE_CANNON).map((x) => x.level);
+  const top = Math.max(...lvls);
+  const a = nextStep(village, [], DOUBLE_CANNON, 9, 0, top);
+  assert.equal(a.to, top + 1);
+  const b = nextStep(village, [a], DOUBLE_CANNON, 9, 0, top + 1); // dasselbe Exemplar weiter
+  assert.equal(b.to, top + 2);
+  const after = planInstances(village, [a, b], DOUBLE_CANNON);
+  assert.equal(after[0].start, top);
+  assert.equal(after[0].level, top + 2);
+  assert.equal(nextStep(village, [], DOUBLE_CANNON, 9, 0, 42), null); // gibt es nicht
+});
+
+test('Kette am selben Exemplar läuft nacheinander, nicht parallel', () => {
+  const lvls = planInstances(village, [], DOUBLE_CANNON).map((x) => x.level);
+  const top = Math.max(...lvls);
+  const a = nextStep(village, [], DOUBLE_CANNON, 9, 0, top);
+  const b = nextStep(village, [a], DOUBLE_CANNON, 9, 0, top + 1);
+  const s = simulate(village, game, [a, b], r.running, { ...slots, builder_builders: 5 }, { now });
+  assert.equal(s.steps[1].start, s.steps[0].end); // trotz freier Bauarbeiter erst nach Stufe davor
+});
+
+test('Laufendes Upgrade: nächste Stufe desselben Exemplars erst, wenn es fertig ist', () => {
+  // Großer Wächter 29→30 läuft noch 110355 s; 30→31 erst danach, auch wenn ein Bauarbeiter frei ist
+  const s = simulate(village, game, [{ id: 28000002, to: 31, n: 1 }], r.running, { ...slots, home_builders: 6 }, { now });
+  assert.equal(s.steps[0].start, now + 110355e3);
+  // ein freies Exemplar derselben Art (4. X-Bogen steht schon auf 8) darf dagegen sofort
+  const x = simulate(village, game, [{ id: 1000021, to: 9, n: 1 }], r.running, { ...slots, home_builders: 6 }, { now });
+  assert.equal(x.steps[0].start, now);
+});

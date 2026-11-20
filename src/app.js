@@ -1,6 +1,6 @@
 import { readVillage, analyze, progress, schedule, toIcs, icsCalendar, formatDuration, levelEntry, RESOURCES, GROUPS } from './village.js';
 import { dashboard } from './dashboard.js';
-import { nextStep, nextEquipStep, gearCandidates, simulate, cleanPlan, groupOf } from './planner.js';
+import { nextStep, nextEquipStep, gearCandidates, planInstances, simulate, cleanPlan, groupOf } from './planner.js';
 import { BOOST_TYPES, applyBoosts, runningKey, helperDay } from './boosts.js';
 import { magicItems } from './magic.js';
 import { bobStatus, TASK_TEXT } from './bob.js';
@@ -27,6 +27,7 @@ const $ = (id) => document.getElementById(id);
 let game = null;
 let village = null;
 const openCats = new Set(); // aufgeklappte Kategorien bleiben beim Neuzeichnen offen
+const openInst = new Set(); // aufgeklappte Exemplar-Listen (je Objekt-ID)
 
 // ---------- Speicher ----------
 
@@ -364,10 +365,17 @@ function renderExtras(r, now) {
 // Grobe Vergleichbarkeit der Ressourcen für "günstigste": Dunkles Elixier ist ca. 100× seltener
 const RESOURCE_WEIGHT = { DarkElixir: 100 };
 const nextCost = (i) => (i.next ? i.next.cost * (RESOURCE_WEIGHT[i.next.resource] || 1) : Infinity);
+const totalCost = (i) => Object.entries(i.cost || {}).reduce((n, [r, v]) => n + v * (RESOURCE_WEIGHT[r] || 1), 0);
+const nextSec = (i) => i.next?.seconds ?? Infinity;
 const SORTS = {
   total: { de: 'Längste Restzeit zuerst', fn: (a, b) => b.seconds - a.seconds },
-  fastest: { de: 'Schnellste nächste Stufe', fn: (a, b) => (a.next?.seconds ?? Infinity) - (b.next?.seconds ?? Infinity) },
+  shortest: { de: 'Kürzeste Restzeit zuerst', fn: (a, b) => a.seconds - b.seconds },
+  fastest: { de: 'Schnellste nächste Stufe', fn: (a, b) => nextSec(a) - nextSec(b) },
+  slowest: { de: 'Längste nächste Stufe', fn: (a, b) => (b.next?.seconds ?? -1) - (a.next?.seconds ?? -1) },
   cheapest: { de: 'Günstigste nächste Stufe', fn: (a, b) => nextCost(a) - nextCost(b) },
+  priciest: { de: 'Teuerste nächste Stufe', fn: (a, b) => (b.next ? nextCost(b) : -1) - (a.next ? nextCost(a) : -1) },
+  cheapTotal: { de: 'Geringste Gesamtkosten', fn: (a, b) => totalCost(a) - totalCost(b) },
+  name: { de: 'Name A–Z', fn: (a, b) => a.name.localeCompare(b.name) },
 };
 
 function listControls() {
@@ -404,7 +412,19 @@ function itemRow(i, tf, cf, category) {
       + (i.next.cost ? ` · ${costText({ [i.next.resource]: i.next.cost }, cf)}` : '')
     : null;
   const done = !i.count;
-  return el('li', { class: done ? 'done-item' : '' },
+  const multi = !done && !isWall && !i.supercharge && i.levels.length > 1;
+  const open = multi && openInst.has(i.id);
+  const instList = open ? el('ul', { class: 'inst' }, planInstances(village, getPlan(), i.id, i.missing).map((x, k) => {
+    const planned = x.level > x.start;
+    return el('li', {},
+      el('span', { class: 'name' }, t('Exemplar {k}', { k: k + 1 }),
+        el('span', { class: 'lvl' }, ` · ${t('Stufe {n}', { n: x.start })}`),
+        planned ? el('span', { class: 'planned' }, ` → ${t('geplant {n}', { n: x.level })}`) : null),
+      x.level < i.to
+        ? el('button', { class: 'add small-add', title: t('Dieses Exemplar eine Stufe weiter planen'), 'aria-label': t('{name} {a}→{b} planen', { name: i.name, a: x.level, b: x.level + 1 }), onclick: () => addToPlan(i, 1, x.level) }, '+')
+        : el('span', { class: 'muted small' }, '✓'));
+  })) : null;
+  return el('li', { class: `${done ? 'done-item' : ''} ${open ? 'open' : ''}` },
     el('span', { class: 'grow' },
       el('span', { class: 'name' }, i.name, el('span', { class: 'lvl' }, done ? ` ${i.to} ✓` : ` → ${i.to}`),
         (i.levels.length > 1 || isWall) && !done ? el('span', { class: 'sub' }, t('Stufen: {l}', { l: levelsText })) : null,
@@ -413,7 +433,12 @@ function itemRow(i, tf, cf, category) {
         el('span', { class: 'muted' }, costText(i.cost, cf)))),
     done || i.supercharge ? null : el('span', { class: 'adds' },
       el('button', { class: 'add', title: t('Nächste Stufe planen'), 'aria-label': t('{name} planen', { name: i.name }), onclick: () => addToPlan(i) }, '+'),
-      isWall ? el('button', { class: 'add ten', title: t('10 Mauern planen'), 'aria-label': t('10× {name} planen', { name: i.name }), onclick: () => addToPlan(i, 10) }, '+10') : null));
+      isWall ? el('button', { class: 'add ten', title: t('10 Mauern planen'), 'aria-label': t('10× {name} planen', { name: i.name }), onclick: () => addToPlan(i, 10) }, '+10') : null,
+      multi ? el('button', {
+        class: `add ten ${open ? 'on' : ''}`, title: t('Exemplar einzeln wählen'), 'aria-expanded': String(open),
+        onclick: () => { if (openInst.has(i.id)) openInst.delete(i.id); else openInst.add(i.id); render(); },
+      }, t('Einzeln')) : null),
+    instList);
 }
 
 function renderProgress(r) {
@@ -605,14 +630,17 @@ function renderBoost(b) {
 
 // ---------- Plan ----------
 
-function addToPlan(i, times = 1) {
+function addToPlan(i, times = 1, from) {
   const plan = getPlan();
   const added = [];
+  let base = from;
   for (let k = 0; k < times; k++) {
-    const step = nextStep(village, plan, i.id, i.to, i.missing);
+    // mit `from`: genau dieses Exemplar weiterplanen, sonst das niedrigste
+    const step = nextStep(village, plan, i.id, i.to, i.missing, base);
     if (!step) break;
     plan.push(step);
     added.push(step);
+    if (base !== undefined) base = step.to;
   }
   if (!added.length) {
     toast(t('{name}: schon alles bis Stufe {n} geplant', { name: i.name, n: i.to }));

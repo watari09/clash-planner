@@ -67,25 +67,46 @@ function instances(village) {
 }
 
 /**
- * Nächster sinnvoller Plan-Eintrag für ein Objekt: das niedrigste Exemplar eine Stufe höher,
- * unter Berücksichtigung dessen, was schon im Plan steht. null, wenn alles bis `max` verplant ist.
+ * Exemplare eines Objekts mit Stufe laut Export und Stufe nach dem Plan, absteigend sortiert.
+ * Exemplare gleicher Stufe sind im Spiel gleichwertig; Plan-Einträge werden der Reihe nach angewendet.
  */
-export function nextStep(village, plan, id, max, missing = 0) {
-  const levels = [...(instances(village)[id] || []), ...Array(missing).fill(0)];
-  for (const e of plan) if (e.id === id) bump(levels, e.to);
-  levels.sort((a, b) => a - b);
-  const low = levels[0];
-  if (low === undefined || low >= max) return null;
-  const to = low + 1;
+export function planInstances(village, plan, id, missing = 0) {
+  const list = [
+    ...(instances(village)[id] || []).map((lvl) => ({ start: lvl, level: lvl })),
+    ...Array.from({ length: missing }, () => ({ start: 0, level: 0 })),
+  ];
+  for (const e of plan) {
+    if (e.id !== id || e.kind) continue;
+    // bevorzugt ein Exemplar, das schon im Plan weitergestuft wurde (eine Kette bleibt am selben Exemplar)
+    const cand = list.filter((x) => x.level === e.to - 1).sort((a, b) => (b.level - b.start) - (a.level - a.start))[0];
+    if (cand) cand.level = e.to;
+  }
+  return list.sort((a, b) => b.level - a.level || b.start - a.start);
+}
+
+/**
+ * Nächster Plan-Eintrag für ein Objekt. Ohne `from`: das niedrigste Exemplar eine Stufe höher.
+ * Mit `from`: gezielt ein Exemplar, das (nach dem Plan) auf Stufe `from` steht – z. B. um eine
+ * bestimmte Doppelkanone hochzuziehen. null, wenn nichts mehr bis `max` zu planen ist.
+ */
+export function nextStep(village, plan, id, max, missing = 0, from) {
+  const levels = planInstances(village, plan, id, missing).map((x) => x.level);
+  const base = from ?? Math.min(...levels);
+  if (!levels.length || !levels.includes(base) || base >= max) return null;
+  const to = base + 1;
   // n = das wievielte Exemplar auf Stufe `to` dieser Eintrag ergibt – daran erkennt man später, ob er erledigt ist
   return { id, to, n: levels.filter((l) => l >= to).length + 1 };
 }
 
-/** Wendet einen Plan-Eintrag auf die Exemplare an. Liefert 'ok', 'done' (schon erledigt) oder 'blocked'. */
-function bump(levels, to) {
-  const i = levels.indexOf(to - 1);
-  if (i >= 0) { levels[i] = to; return 'ok'; }
-  return levels.some((l) => l < to - 1) ? 'blocked' : 'done';
+/**
+ * Wendet einen Plan-Eintrag auf die Exemplare an (Objekte { lvl, readyAt }).
+ * Nimmt das Exemplar auf Stufe to-1, das am frühesten verfügbar ist.
+ * Liefert das Exemplar oder 'done' (schon erledigt) bzw. 'blocked'.
+ */
+function bump(list, to) {
+  const cand = list.filter((x) => x.lvl === to - 1).sort((a, b) => a.readyAt - b.readyAt)[0];
+  if (cand) return cand;
+  return list.some((x) => x.lvl < to - 1) ? 'blocked' : 'done';
 }
 
 /**
@@ -100,7 +121,16 @@ function bump(levels, to) {
 export function simulate(village, game, plan, running, slots, options = {}) {
   const { now = Date.now(), timeFactor = 1, costFactor = 1, lang = 'de' } = options;
   const exported = instances(village);
-  const levels = structuredClone(exported);
+  // Exemplare mit Zeitpunkt, ab dem sie weiter ausgebaut werden können (laufende: erst wenn fertig)
+  const levels = {};
+  for (const [id, lvls] of Object.entries(exported)) {
+    const runs = running.filter((r) => String(r.id) === id).map((r) => ({ level: r.level, at: r.finishAt }));
+    levels[id] = lvls.map((lvl) => {
+      const i = runs.findIndex((x) => x.level === lvl);
+      const readyAt = i >= 0 ? runs.splice(i, 1)[0].at : now;
+      return { lvl, readyAt };
+    });
+  }
   const free = {};
   for (const [g, n] of Object.entries(slots)) {
     const busy = running.filter((r) => r.group === g && r.finishAt > now).map((r) => r.finishAt);
@@ -145,15 +175,19 @@ export function simulate(village, game, plan, running, slots, options = {}) {
       continue;
     }
     const lv = (levels[e.id] ||= []);
-    if (e.to === 1 && !lv.includes(0)) lv.push(0); // neues, noch nicht gebautes Exemplar
-    if (bump(lv, e.to) !== 'ok') { dropped.push({ ...e, index, reason: 'blocked' }); continue; }
+    if (e.to === 1 && !lv.some((x) => x.lvl === 0)) lv.push({ lvl: 0, readyAt: now }); // neues, noch nicht gebautes Exemplar
+    const inst = bump(lv, e.to);
+    if (typeof inst === 'string') { dropped.push({ ...e, index, reason: 'blocked' }); continue; }
 
     const [, sec, cost, res] = levelEntry(item, e.to) || [0, 0, 0, ''];
     const queue = free[group];
-    const start = Math.max(queue.shift(), now);
+    // frühestens, wenn ein Platz frei ist UND dieses Exemplar nicht mehr im Ausbau steckt
+    const start = Math.max(queue.shift(), inst.readyAt, now);
     const end = start + Math.round(sec * timeFactor) * 1000;
     queue.push(end);
     queue.sort((a, b) => a - b);
+    inst.lvl = e.to;
+    inst.readyAt = end;
     steps.push({
       index,
       id: e.id,

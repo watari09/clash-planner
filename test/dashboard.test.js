@@ -32,9 +32,10 @@ test('mit Plan: Folge-Upgrade auf dem frei werdenden Platz und Ressourcen zum Be
 
 test('freier Platz: geplantes Upgrade startet sofort', () => {
   const s2 = { ...slots, builder_builders: 4 }; // ein Nachtdorf-Platz frei
-  const sim = simulate(village, game, [{ id: 1000036, to: 9, n: 2 }], r.running, s2, { now });
+  const step = nextStep(village, [], 1000035, 9); // ein Nachtdorf-Gebäude, das gerade nicht ausgebaut wird
+  const sim = simulate(village, game, [step], r.running, s2, { now });
   const d = dashboard(r.running, sim, s2, { now });
   assert.equal(d.free.length, 1);
   assert.equal(d.free[0].group, 'builder_builders');
-  assert.equal(d.free[0].next?.name, 'Elixierlager');
+  assert.equal(d.free[0].next?.id, 1000035);
 });
