@@ -128,3 +128,40 @@ test('Aktuelles Rathaus: noch nicht freigeschaltete Squads zählen mit, Freigesc
 test('Ziel unter dem aktuellen Rathaus wird ignoriert', () => {
   assert.equal(progress(full, game, 'de', { home: 5 }).home.hall, 13);
 });
+
+// ---------- Realistische Dauer, Filter, Rush ----------
+import { schedule } from '../src/village.js';
+
+test('schedule: nie kürzer als die längste Kette oder Summe ÷ Bauarbeiter', () => {
+  assert.equal(schedule([10, 1, 1, 1], 5), 10); // ein langer Held bestimmt die Dauer
+  assert.equal(schedule([4, 4, 4, 4], 2), 8);
+  assert.equal(schedule([], 5), 0);
+  const x = p.home;
+  const real = schedule(x.builderChains, 5);
+  assert.ok(real >= x.builderSeconds / 5);
+  assert.ok(real >= Math.max(...x.builderChains));
+});
+
+test('Filter: ohne Ressourcengebäude und Zauber wird es weniger', () => {
+  const f = progress(full, game, 'de', {}, { exclude: ['resource', 'spell'] }).home;
+  const b = f.categories.find((c) => c.key === 'buildings');
+  assert.ok(!b.items.some((i) => i.name === 'Goldmine'));
+  assert.ok(b.items.some((i) => i.name === 'Kanone'));
+  assert.ok(!f.categories.find((c) => c.key === 'lab').items.some((i) => game.items[String(i.id)].kind === 'spell'));
+  assert.ok(f.builderSeconds < p.home.builderSeconds);
+});
+
+test('Rush Fixer: Ziel ist das Maximum von Rathaus 12', () => {
+  const r12 = progress(full, game, 'de', { home: 'rush' });
+  assert.equal(r12.home.hall, 12);
+  assert.ok(r12.home.rush);
+  assert.ok(r12.home.builderSeconds < p.home.builderSeconds);
+  assert.ok(!r12.home.categories.find((c) => c.key === 'buildings').items.some((i) => i.name === 'Rathaus'));
+});
+
+test('Rush Fixer: Truppen, die erst ab Rathaus 13 freigeschaltet werden, zählen nicht (wie ClashTrack)', () => {
+  const lab = progress(full, game, 'de', { home: 'rush' }).home.categories.find((c) => c.key === 'lab');
+  assert.ok(!lab.items.some((i) => i.name === 'Kampfholzwerfer' || i.name === 'Belagerungskaserne'));
+  assert.ok(lab.items.some((i) => i.name === 'Yeti')); // ab Rathaus 12
+  assert.equal(lab.cost.Elixir, 55100000); // ClashTrack: 55.1M
+});

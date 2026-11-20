@@ -174,3 +174,17 @@ select.target {
 .adds { display: flex; flex-direction: column; gap: 4px; align-self: center; }
 .add.ten { font-size: .75rem; }
 .done-item .name { color: var(--muted); }
+
+.controls { flex-direction: column; align-items: stretch; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chip { padding: 5px 11px; font-size: .85rem; border-radius: 99px; color: var(--muted); }
+.chip.on { color: var(--text); border-color: var(--accent); background: rgba(242, 183, 5, .12); }
+select.inline {
+  font: inherit; color: var(--text); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 2px 4px; margin: 0 2px;
+}
+
+.ranking { counter-reset: rank; }
+.ranking li::before { counter-increment: rank; content: '#' counter(rank); color: var(--accent); font-weight: 700; min-width: 2.2em; }
+.tabs button { padding: 9px 4px; font-size: .92rem; }
+.ranking .name { flex: 1; margin-left: 4px; }

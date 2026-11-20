@@ -229,7 +229,40 @@ const isWall = (item) => item.name.en === 'Wall' || item.name.en === 'BB Wall' |
  * - Laufende Upgrades: die laufende Stufe zählt mit Restzeit und ohne Kosten (schon bezahlt).
  * - Mit Edelsteinen gekaufte Plätze (z. B. Bauhütten) und Rathaus/Meisterhütte selbst zählen nicht.
  */
-export function progress(village, game, lang = 'de', targets = {}) {
+/**
+ * Filter-Schlüssel eines Objekts: Gebäude nach Klasse (defense/resource/army/other), Fallen,
+ * Labor nach troop/spell/siege. Mauern, Helden und Begleiter werden nicht gefiltert (null).
+ */
+export function filterKey(item) {
+  if (item.kind === 'trap') return 'traps';
+  if (item.kind === 'spell') return 'spell';
+  if (item.kind === 'building') return item.name.en === 'Wall' ? null : item.group || 'other';
+  if (item.kind === 'troop') return item.group || 'troop';
+  return null;
+}
+
+/**
+ * Realistische Gesamtdauer für `n` parallele Bauarbeiter: Jedes Exemplar (z. B. ein Held) wird
+ * nacheinander hochgestuft und kann nicht gleichzeitig von zwei Bauarbeitern gebaut werden.
+ * Längste Ketten zuerst auf den jeweils am wenigsten belasteten Bauarbeiter (LPT-Verfahren).
+ * Ergebnis ≥ max(Summe ÷ n, längste Kette).
+ */
+export function schedule(chains, n) {
+  const load = Array(Math.max(1, n)).fill(0);
+  for (const c of [...chains].sort((a, b) => b - a)) {
+    let i = 0;
+    for (let k = 1; k < load.length; k++) if (load[k] < load[i]) i = k;
+    load[i] += c;
+  }
+  return Math.max(...load);
+}
+
+/**
+ * targets[v]: Ziel-Rathaus/-Meisterhütte (Zahl) oder 'rush' = Maximum der vorherigen Stufe.
+ * options.exclude: Filter-Schlüssel (siehe filterKey), die nicht mitgerechnet werden.
+ */
+export function progress(village, game, lang = 'de', targets = {}, options = {}) {
+  const exclude = new Set(options.exclude || []);
   const out = {};
   for (const v of ['home', 'builder']) {
     const b = v === 'home' ? village.buildings : village.buildings2 || [];
@@ -238,7 +271,10 @@ export function progress(village, game, lang = 'de', targets = {}) {
     if (!current) continue;
     // Ziel: gewähltes Rathaus bzw. gewählte Meisterhütte, nie unter der aktuellen Stufe
     const hallItem = game.items[String(hallId)];
-    const hall = Math.min(Math.max(targets[v] || current, current), hallItem.levels.length + (hallItem.first || 1) - 1);
+    const rush = targets[v] === 'rush';
+    const hall = rush
+      ? Math.max(1, current - 1)
+      : Math.min(Math.max(targets[v] || current, current), hallItem.levels.length + (hallItem.first || 1) - 1);
     const labId = v === 'home' ? IDS.laboratory : IDS.starLab;
     const labCap = maxLevel(game.items[String(labId)], hall);
     const petCap = v === 'home' ? maxLevel(game.items[String(IDS.petHouse)], hall) : 0;
@@ -248,6 +284,9 @@ export function progress(village, game, lang = 'de', targets = {}) {
     const add = (id, cat, cap, instances, max) => {
       const item = game.items[String(id)];
       if (!item || (id === hallId && max === undefined)) return;
+      if (exclude.has(filterKey(item))) return;
+      // Erst nach dem Ziel freigeschaltet (z. B. beim Rush-Vergleich mit dem vorigen Rathaus): nicht mitzählen
+      if (item.unlock && item.unlock > hall && id !== hallId) return;
       rows.push({ id, item, cat, cap, instances, max });
     };
     // Rathaus/Meisterhütte selbst nur, wenn ein höheres Ziel gewählt ist
@@ -295,6 +334,7 @@ export function progress(village, game, lang = 'de', targets = {}) {
 
     const cats = Object.fromEntries(CATEGORIES[v].map(([k, t]) => [k, {
       key: k, title: t[lang] || t.en, done: 0, total: 0, seconds: 0, totalSeconds: 0, cost: {}, items: [], doneItems: [],
+      chains: [], // Restzeit je Exemplar (für die realistische Gesamtdauer)
     }]));
 
     for (const { id, item, cat, cap, instances, max: fixedMax } of rows) {
@@ -321,14 +361,17 @@ export function progress(village, game, lang = 'de', targets = {}) {
         for (let L = first; L <= max; L++) cats[cat].totalSeconds += (levelEntry(item, L) || [0, 0])[1];
         if (cur >= max) continue;
         agg.count += 1;
+        let chain = 0;
         agg.from = Math.min(agg.from, ins.lvl);
         for (let L = cur + 1; L <= max; L++) {
           const [, sec, cost, res] = levelEntry(item, L) || [0, 0, 0, ''];
           if (res === 'Diamonds') { cats[cat].done += 1; continue; } // Kauf mit Edelsteinen, kein Upgrade
           const running = L === cur + 1 && typeof ins.timer === 'number';
           agg.seconds += running ? ins.timer : sec;
+          chain += running ? ins.timer : sec;
           if (!running && cost) agg.cost[res] = (agg.cost[res] || 0) + cost;
         }
+        if (chain) cats[cat].chains.push(chain);
       }
       if (!agg.count) cats[cat].doneItems.push(agg);
       if (agg.count) {
@@ -357,6 +400,8 @@ export function progress(village, game, lang = 'de', targets = {}) {
       total,
       categories: list,
       builderSeconds: sum(['buildings', 'traps', 'walls', 'heroes']),
+      builderChains: list.filter((c) => ['buildings', 'traps', 'walls', 'heroes'].includes(c.key)).flatMap((c) => c.chains),
+      rush,
       labSeconds: sum(['lab']),
       petSeconds: sum(['pets']),
     };

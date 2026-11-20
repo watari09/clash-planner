@@ -1,6 +1,7 @@
-import { readVillage, analyze, progress, toIcs, icsCalendar, formatDuration, RESOURCES, GROUPS } from './village.js';
+import { readVillage, analyze, progress, schedule, toIcs, icsCalendar, formatDuration, RESOURCES, GROUPS } from './village.js';
 import { nextStep, simulate, cleanPlan, groupOf } from './planner.js';
 import { BOOST_TYPES, applyBoosts, runningKey } from './boosts.js';
+import { magicItems } from './magic.js';
 
 // localStorage-Schlüssel
 const STORE_VILLAGES = 'planner.villages'; // { tag: json-text }
@@ -9,7 +10,11 @@ const STORE_SLOTS = 'planner.slots'; // vom Nutzer geänderte Platzanzahl je Gru
 const STORE_BOOST = 'planner.boost'; // { time: %, cost: % } z. B. Goldpass/Season-Boost
 const LEGACY_VILLAGE = 'planner.village'; // alte Version: nur ein Dorf
 const STORE_TAB = 'planner.tab';
-const STORE_LIST = 'planner.list'; // { sort: 'total'|'fastest'|'cheapest', showDone: bool }
+const STORE_LIST = 'planner.list'; // { sort, showDone, exclude: [filterKey], builders: { home, builder } }
+const FILTERS = [
+  ['defense', 'Verteidigung'], ['resource', 'Ressourcen'], ['army', 'Armee'], ['other', 'Sonstige'], ['traps', 'Fallen'],
+  ['troop', 'Truppen'], ['spell', 'Zauber'], ['siege', 'Belagerung'],
+];
 const planKey = () => `planner.plan.${village?.tag || 'Dorf'}`; // [{ id, to, n }] je Dorf
 const boostKey = () => `planner.boosts.${village?.tag || 'Dorf'}`; // [{ type, at, target? }] je Dorf
 const targetKey = () => `planner.target.${village?.tag || 'Dorf'}`; // { home, builder } Ziel-Rathaus/-Meisterhütte
@@ -156,6 +161,7 @@ function render() {
   renderExtras(r, now);
   renderProgress(r);
   renderPlan(r, now);
+  renderMagic(r, now);
   showTab(localStorage.getItem(STORE_TAB) || 'overview');
 }
 
@@ -309,9 +315,21 @@ const SORTS = {
 };
 
 function listControls() {
-  const opts = { sort: 'total', showDone: false, ...readJson(STORE_LIST, {}) };
+  const opts = { sort: 'total', showDone: false, exclude: [], ...readJson(STORE_LIST, {}) };
   const save = (patch) => { localStorage.setItem(STORE_LIST, JSON.stringify({ ...opts, ...patch })); render(); };
+  const b = boost();
+  const preset = (pct, label) => el('button', {
+    class: `chip ${b.time === pct && b.cost === pct ? 'on' : ''}`,
+    onclick: () => { localStorage.setItem(STORE_BOOST, JSON.stringify({ time: pct, cost: pct })); render(); },
+  }, label);
   return el('section', { class: 'card controls' },
+    el('div', { class: 'chips' }, el('span', { class: 'muted' }, 'Goldpass:'),
+      preset(0, 'keiner'), preset(17, 'realistisch 17 %'), preset(20, 'voll 20 %')),
+    el('div', { class: 'chips' }, el('span', { class: 'muted' }, 'Zeigen:'),
+      FILTERS.map(([key, label]) => el('button', {
+        class: `chip ${opts.exclude.includes(key) ? '' : 'on'}`,
+        onclick: () => save({ exclude: opts.exclude.includes(key) ? opts.exclude.filter((k) => k !== key) : [...opts.exclude, key] }),
+      }, label))),
     el('label', {}, 'Sortieren: ',
       el('select', { onchange: (e) => save({ sort: e.target.value }) },
         Object.entries(SORTS).map(([k, d]) => el('option', { value: k, selected: k === opts.sort }, d.de)))),
@@ -343,8 +361,8 @@ function itemRow(i, tf, cf, category) {
 
 function renderProgress(r) {
   const targets = readJson(targetKey(), {});
-  const list = { sort: 'total', showDone: false, ...readJson(STORE_LIST, {}) };
-  const p = progress(village, game, 'de', targets);
+  const list = { sort: 'total', showDone: false, exclude: [], builders: {}, ...readJson(STORE_LIST, {}) };
+  const p = progress(village, game, 'de', targets, { exclude: list.exclude });
   const b = boost();
   const tf = 1 - b.time / 100;
   const cf = 1 - b.cost / 100;
@@ -358,7 +376,16 @@ function renderProgress(r) {
   ]) {
     const x = p[v];
     if (!x) continue;
-    const builders = slotsOf(builderKey);
+    const builders = list.builders?.[v] || slotsOf(builderKey);
+    const setBuilders = (n) => {
+      const cur = { sort: 'total', showDone: false, exclude: [], builders: {}, ...readJson(STORE_LIST, {}) };
+      cur.builders = { ...(cur.builders || {}), [v]: n };
+      localStorage.setItem(STORE_LIST, JSON.stringify(cur));
+      render();
+    };
+    const builderSelect = el('select', { class: 'inline', 'aria-label': 'Anzahl Bauarbeiter', onchange: (e) => setBuilders(Number(e.target.value)) },
+      Array.from({ length: v === 'home' ? 7 : 3 }, (_, i) => i + 1).map((n) => el('option', { value: n, selected: n === builders }, String(n))));
+    const realistic = schedule(x.builderChains, builders) * tf;
     const allCost = {};
     for (const c of x.categories) for (const [res, n] of Object.entries(c.cost)) allCost[res] = (allCost[res] || 0) + n;
 
@@ -368,24 +395,31 @@ function renderProgress(r) {
       class: 'target', 'aria-label': `Ziel-${title}`,
       onchange: (e) => {
         const t = readJson(targetKey(), {});
-        t[v] = Number(e.target.value);
+        t[v] = e.target.value === 'rush' ? 'rush' : Number(e.target.value);
         localStorage.setItem(targetKey(), JSON.stringify(t));
         render();
       },
-    }, Array.from({ length: maxHall - x.current + 1 }, (_, i) => x.current + i).map((n) =>
-      el('option', { value: n, selected: n === x.hall }, n === x.current ? `${title} ${n} (aktuell)` : `${title} ${n}`)));
+    }, [
+      x.current > 1 ? el('option', { value: 'rush', selected: x.rush }, `Rush Fixer: Max ${title} ${x.current - 1}`) : null,
+      ...Array.from({ length: maxHall - x.current + 1 }, (_, i) => x.current + i).map((n) =>
+        el('option', { value: n, selected: !x.rush && n === x.hall }, n === x.current ? `${title} ${n} (aktuell)` : `${title} ${n}`)),
+    ]);
     sections.push(el('section', { class: 'card progress' },
       el('div', { class: 'group-head' },
         el('h3', {}, 'Fortschritt bis'),
         el('span', { class: 'pct' }, `${String(x.percent).replace('.', ',')} %`)),
       picker,
       bar(x.percent),
-      el('p', { class: 'muted small' }, `Anteil der Bauzeit bis zum Maximum für ${title} ${x.hall}`,
+      el('p', { class: 'muted small' },
+        x.rush
+          ? `Was noch unter dem Maximum von ${title} ${x.hall} liegt – also aus dem Rush nachzuholen ist`
+          : `Anteil der Bauzeit bis zum Maximum für ${title} ${x.hall}`,
         x.hall > x.current ? ` – inklusive ${title}-Upgrade und allem, was bis dahin freigeschaltet wird` : '',
+        '. Bauarbeiter-Zeit berücksichtigt, dass ein Gebäude oder Held nicht von zwei Bauarbeitern gleichzeitig gebaut wird',
         `. Nach Stufen gezählt: ${String(x.levelPercent).replace('.', ',')} %.`),
       el('dl', { class: 'facts' },
         el('dt', {}, 'Bauarbeiter'),
-        el('dd', {}, `${days((x.builderSeconds * tf) / builders)} mit ${builders} Bauarbeiter${builders === 1 ? '' : 'n'}`),
+        el('dd', {}, days(realistic), ' mit ', builderSelect, ` Bauarbeiter${builders === 1 ? '' : 'n'}`),
         el('dt', {}, v === 'home' ? 'Labor' : 'Sternlabor'),
         el('dd', {}, days(x.labSeconds * tf)),
         x.petSeconds ? el('dt', {}, 'Begleiterhaus') : null,
@@ -431,7 +465,7 @@ function renderBoost(b) {
     }),
     ' %');
   return el('section', { class: 'card' },
-    el('h3', {}, 'Rabatt'),
+    el('h3', {}, 'Eigener Rabatt'),
     el('p', { class: 'muted small' }, 'Z. B. durch Goldpass oder Season-Boost. Wirkt nur auf die Fortschritts-Rechnung, nicht auf laufende Upgrades.'),
     el('div', { class: 'row boost' }, input('time', 'Bauzeit −'), input('cost', 'Kosten −')),
   );
@@ -571,6 +605,24 @@ function download(text, name) {
   document.body.append(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+
+// ---------- Magische Gegenstände ----------
+
+function renderMagic(r, now) {
+  const m = magicItems(village, game, r.running, now);
+  $('magic').replaceChildren(
+    el('section', { class: 'card' },
+      el('h3', {}, 'Wo lohnt sich ein Buch?'),
+      el('p', { class: 'muted small' }, 'Ein Buch beendet ein Upgrade sofort – am meisten bringt es beim längsten. Berücksichtigt wird, was du jetzt starten kannst (Rathaus- bzw. Labor-Stufe); ⏳ = läuft schon, gezählt wird die Restzeit.')),
+    ...Object.values(m).map((book) => el('section', { class: 'card group' },
+      el('h3', {}, book.title),
+      book.items.length
+        ? el('ol', { class: 'items ranking' }, book.items.map((i) => el('li', {},
+          el('span', { class: 'name' }, i.name, el('span', { class: 'lvl' }, ` → ${i.to}`)),
+          el('span', { class: 'time' }, el('b', {}, `${i.running ? '⏳ ' : ''}${formatDuration(i.seconds)}`)))))
+        : el('p', { class: 'muted small' }, 'Nichts, wofür sich das Buch gerade lohnt.'))),
+  );
 }
 
 // ---------- Kalender ----------

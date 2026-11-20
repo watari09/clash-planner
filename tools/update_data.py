@@ -192,6 +192,16 @@ def boosts(sha: str) -> dict:
     }
 
 
+def filter_group(kind: str, first: dict):
+    """Untergruppe für Filter: Gebäude nach Klasse, Labor nach Truppe/Zauber/Belagerung."""
+    if kind == "building":
+        cls = first.get("BuildingClass", "")
+        return {"Defense": "defense", "Resource": "resource", "Army": "army"}.get(cls, "other")
+    if kind == "troop":
+        return "siege" if first.get("ProductionBuilding") == "Siege Workshop" else "troop"
+    return None
+
+
 def unlock_hall(kind: str, first: dict, ids_by_name: dict, items: dict):
     """
     Ab welchem Rathaus (bzw. welcher Meisterhütte) ein Objekt freigeschaltet werden kann – oder None,
@@ -253,6 +263,9 @@ def main(sha: str):
             first_level = num(first.get("VisualLevel"), 1) or 1
             if first_level > 1:
                 items[str(gid)]["first"] = first_level
+            group = filter_group(kind, first)
+            if group:
+                items[str(gid)]["group"] = group
             unlock = unlock_hall(kind, first, ids_by_name, items)
             if unlock:
                 items[str(gid)]["unlock"] = unlock
