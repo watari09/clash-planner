@@ -1,6 +1,12 @@
 # Upgrade-Planer für Clash of Clans
 
-Webseite: Dorf-Export aus Clash of Clans einfügen → laufende Upgrades mit sekundengenauer Fertig-Zeit sehen und als Kalender-Erinnerungen (`.ics`) übernehmen. Läuft komplett im Browser, keine Anmeldung, keine Daten auf einem Server.
+Webseite: Dorf-Export aus Clash of Clans einfügen →
+
+- laufende Upgrades mit sekundengenauer Fertig-Zeit, als Kalender-Erinnerungen (`.ics`) übernehmbar
+- Fortschritt bis zum Maximum des aktuellen Rathauses bzw. der Meisterhütte: Prozent (nach Bauzeit), Bauarbeiter- und Labor-Tage, Kosten je Ressource, Liste aller offenen Upgrades
+- mehrere Dörfer, Rabatt (Goldpass/Season-Boost) einstellbar
+
+ Läuft komplett im Browser, keine Anmeldung, keine Daten auf einem Server.
 
 ## Entwicklung
 

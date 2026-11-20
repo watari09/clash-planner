@@ -49,6 +49,12 @@ def fetch(sha: str, path: str) -> str:
     return cached.read_text(encoding="utf-8")
 
 
+# Felder, die in Folgezeilen leer bleiben, aber für alle Stufen gelten.
+# Zeiten, Kosten und Voraussetzungen werden NICHT vererbt: leer heißt dort wirklich "keins"
+# (z. B. hat die Max-Stufe einer Truppe keine Upgrade-Zeit mehr).
+INHERIT = {"GlobalID", "TID", "VillageType", "BuildResource", "UpgradeResource", "Deprecated", "Disabled"}
+
+
 def rows(text: str):
     """Liefert (Name, [Zeilen als dict]) je Objekt. Folgezeilen ohne Name sind weitere Stufen."""
     r = list(csv.reader(io.StringIO(text)))
@@ -59,9 +65,8 @@ def rows(text: str):
         if d.get("Name"):
             objects.append((d["Name"], [d]))
         elif objects:
-            # leere Felder erben vom ersten Eintrag des Objekts
             first = objects[-1][1][0]
-            objects[-1][1].append({k: (v if v != "" else first.get(k, "")) for k, v in d.items()})
+            objects[-1][1].append({k: (first.get(k, "") if v == "" and k in INHERIT else v) for k, v in d.items()})
     return objects
 
 
@@ -85,7 +90,8 @@ def seconds(d: dict) -> int:
 
 
 def requirement(kind: str, d: dict) -> int:
-    """Voraussetzung der Stufe: Rathaus (Gebäude, Fallen, Helden, Helfer) bzw. Labor-/Haustierhaus-Stufe."""
+    """Voraussetzung für eine Stufe: Rathaus/Meisterhütte (Gebäude, Fallen, Helden, Helfer),
+    Labor-/Sternlabor-/Begleiterhaus-Stufe (Truppen, Zauber, Begleiter) bzw. Schmiede-Stufe (Ausrüstung)."""
     if kind in ("building", "trap"):
         return num(d.get("TownHallLevel"))
     if kind in ("hero", "helper"):
@@ -97,6 +103,57 @@ def requirement(kind: str, d: dict) -> int:
     return 0
 
 
+def cost(d: dict) -> int:
+    return num(d.get("BuildCost")) or num(d.get("UpgradeCost"))
+
+
+def resource(d: dict) -> str:
+    return d.get("BuildResource") or d.get("UpgradeResource") or ""
+
+
+def level_table(kind: str, levels: list) -> list:
+    """
+    Einheitlich: Eintrag i = Stufe i+1 erreichen → [Voraussetzung, Sekunden, Kosten, Ressource].
+    Gebäude/Fallen: Zeile n enthält schon Bau-/Upgradezeit *auf* Stufe n.
+    Truppen/Zauber/Helden/Begleiter: Zeile n enthält die Zeit *von* n auf n+1 → um eins verschieben;
+    Stufe 1 ist eine Freischaltung ohne Labor-Zeit.
+    """
+    if kind in ("building", "trap"):
+        return [[requirement(kind, d), seconds(d), cost(d), resource(d)] for d in levels]
+    out = []
+    for i, d in enumerate(levels):
+        prev = levels[i - 1] if i > 0 else None
+        out.append([
+            requirement(kind, d),
+            seconds(prev) if prev else 0,
+            cost(prev) if prev else 0,
+            resource(prev) if prev else resource(d),
+        ])
+    return out
+
+
+def limits(sha: str, ids_by_name: dict) -> dict:
+    """Erlaubte Anzahl je Gebäude/Falle pro Rathaus-Stufe (Heimatdorf) bzw. Meisterhütten-Stufe (Nachtdorf).
+    In townhall_levels.csv heißt ein leeres Feld "wie bei der vorigen Stufe"."""
+    r = list(csv.reader(io.StringIO(fetch(sha, "logic/townhall_levels.csv"))))
+    header = r[0]
+    cols = [c for c in header if c in ids_by_name]
+    out = {"home": {}, "builder": {}}
+    prev = {}
+    for line in r[2:]:
+        d = dict(zip(header, line))
+        level = num(d.get("Name"), None)
+        if level is None:
+            continue
+        cur = {c: (num(d[c]) if d.get(c, "") != "" else prev.get(c, 0)) for c in cols}
+        prev = cur
+        for c, n in cur.items():
+            if n:
+                gid, village = ids_by_name[c]
+                out[village].setdefault(str(level), {})[str(gid)] = n
+    return out
+
+
 def main(sha: str):
     texts = {"de": {}, "en": {}}
     for lang, path in (("de", "localization/de.csv"), ("en", "localization/texts.csv")):
@@ -105,6 +162,7 @@ def main(sha: str):
                 texts[lang][line[0]] = line[1]
 
     items = {}
+    ids_by_name = {}
     for table, (kind, id_base) in TABLES.items():
         for index, (name, levels) in enumerate(rows(fetch(sha, f"logic/{table}.csv"))):
             first = levels[0]
@@ -112,16 +170,25 @@ def main(sha: str):
             if gid is None:
                 continue
             tid = first.get("TID", "")
+            village = "builder" if first.get("VillageType") == "1" else "home"
+            if kind in ("building", "trap"):
+                ids_by_name[name] = (gid, village)
             items[str(gid)] = {
                 "name": {lang: clean(texts[lang].get(tid, name)) for lang in texts},
                 "kind": kind,
-                "village": "builder" if first.get("VillageType") == "1" else "home",
-                # [Voraussetzung, Dauer in Sekunden] je Stufe; Stufe n steht an Index n-1
-                "levels": [[requirement(kind, d), seconds(d)] for d in levels],
+                "village": village,
+                # Index i = Stufe (first + i) erreichen: [Voraussetzung, Sekunden, Kosten, Ressource]
+                "levels": level_table(kind, levels),
             }
+            # Manche Tabellen beginnen nicht bei Stufe 1 (Nachtdorf-Truppen ab "VisualLevel" 9);
+            # der Dorf-Export zählt nach dieser sichtbaren Stufe.
+            first_level = num(first.get("VisualLevel"), 1) or 1
+            if first_level > 1:
+                items[str(gid)]["first"] = first_level
 
     version = json.loads(fetch(sha, "fingerprint.json")).get("version")
-    out = {"version": version, "fingerprint": sha, "generated": date.today().isoformat(), "items": items}
+    out = {"version": version, "fingerprint": sha, "generated": date.today().isoformat(),
+           "items": items, "limits": limits(sha, ids_by_name)}
     (ROOT / "data").mkdir(exist_ok=True)
     (ROOT / "data" / "game.json").write_text(json.dumps(out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"{len(items)} Objekte, Spielversion {version} → data/game.json")

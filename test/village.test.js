@@ -59,3 +59,45 @@ test('Dauer-Format', () => {
   assert.equal(formatDuration(652093), '7d 13h 8m');
   assert.equal(formatDuration(0), 'fertig');
 });
+
+// ---------- Fortschritt (komplettes Dorf, Rathaus 13 / Meisterhütte 9) ----------
+import { progress, maxLevel } from '../src/village.js';
+const full = readVillage(readFileSync(new URL('./fixtures/village-full.json', import.meta.url), 'utf8'));
+const p = progress(full, game);
+const item = (id) => game.items[String(id)];
+
+test('Max-Stufen bei Rathaus 13 entsprechen dem Spiel', () => {
+  assert.equal(maxLevel(item(1000021), 13), 8); // X-Bogen
+  assert.equal(maxLevel(item(28000002), 13), 50); // Großer Wächter
+  const labAt13 = maxLevel(item(1000007), 13);
+  assert.equal(labAt13, 11); // Labor
+  assert.equal(maxLevel(item(4000008), labAt13), 8); // Drache (Labor 11 bei Rathaus 13)
+});
+
+test('Fortschritt: Rathaus 13 und Meisterhütte 9 werden erkannt, Prozent plausibel', () => {
+  assert.equal(p.home.hall, 13);
+  assert.equal(p.builder.hall, 9);
+  for (const v of [p.home, p.builder]) {
+    assert.ok(v.percent > 0 && v.percent < 100, `Prozent ${v.percent}`);
+    assert.ok(v.done <= v.total);
+  }
+});
+
+test('Fortschritt: laufende X-Bögen zählen mit Restzeit, nicht mit voller Zeit', () => {
+  const xbow = p.home.categories.find((c) => c.key === 'buildings').items.find((i) => i.id === 1000021);
+  // 4 X-Bögen: 7→8 (läuft), 7→8 (läuft), 6→7 (läuft) + 7→8, einer schon auf 8
+  assert.equal(xbow.count, 3);
+  const lvl8 = item(1000021).levels[7][1];
+  assert.equal(xbow.seconds, 203046 + 40011 + 181461 + lvl8);
+});
+
+test('Fortschritt: Mauern ohne Bauzeit, aber mit Kosten', () => {
+  // Heimatdorf: 300 Mauern auf 14 = Maximum bei Rathaus 13
+  const home = p.home.categories.find((c) => c.key === 'walls');
+  assert.equal(home.items.length, 0);
+  assert.equal(home.done, home.total);
+  // Nachtdorf: viele Mauern noch niedrig
+  const bb = p.builder.categories.find((c) => c.key === 'walls');
+  assert.equal(bb.seconds, 0);
+  assert.ok(Object.values(bb.cost).some((n) => n > 0));
+});
