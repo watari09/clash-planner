@@ -1,4 +1,4 @@
-// Auswertung des Dorf-JSON aus Clash of Clans (Einstellungen → Dorfdaten exportieren).
+// Auswertung des Dorf-JSON aus Clash of Clans (Einstellungen → „Export village data in JSON format“).
 // Reine Funktionen ohne DOM, damit sie auch in Node getestet werden können.
 
 /** Spielobjekte, die gezählt werden. */
@@ -44,7 +44,7 @@ export function readVillage(text) {
   try {
     v = JSON.parse(text.trim());
   } catch {
-    throw new Error('Das ist kein gültiges JSON. In Clash: Einstellungen → Dorfdaten exportieren, dann hier einfügen.');
+    throw new Error('Das ist kein gültiges JSON. In Clash: Einstellungen → „Export village data in JSON format“, dann hier einfügen.');
   }
   if (!v || typeof v !== 'object' || !Array.isArray(v.buildings) || typeof v.timestamp !== 'number') {
     throw new Error('Das JSON sieht nicht wie ein Dorf-Export aus (es fehlen "buildings" oder "timestamp").');
