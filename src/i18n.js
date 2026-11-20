@@ -8,7 +8,7 @@ export const EN = {
   'Upgrade-Planer': 'Upgrade Planner',
   'für Clash of Clans · inoffiziell': 'for Clash of Clans · unofficial',
   'Dorfdaten einfügen': 'Paste village data',
-  'In Clash unter Einstellungen „Export village data in JSON format“ wählen – die Daten landen in der Zwischenablage.': 'In Clash, open Settings and choose “Export village data in JSON format” – the data is copied to the clipboard.',
+  'In Clash unter Einstellungen „Dorfdaten im JSON-Format exportieren“ wählen – die Daten landen in der Zwischenablage.': 'In Clash, open Settings and choose “Export Village data in JSON format” – the data is copied to the clipboard.',
   'Hier auf <b>Einfügen</b> tippen.': 'Tap <b>Paste</b> here.',
   'Einfügen': 'Paste',
   'Von Hand einfügen': 'Paste manually',
@@ -28,8 +28,8 @@ export const EN = {
   'Sprache': 'Language',
 
   // Fehler beim Einlesen (village.js)
-  'Das ist kein gültiges JSON. In Clash: Einstellungen → „Export village data in JSON format“, dann hier einfügen.':
-    'That is not valid JSON. In Clash: Settings → “Export village data in JSON format”, then paste it here.',
+  'Das ist kein gültiges JSON. In Clash: Einstellungen → „Dorfdaten im JSON-Format exportieren“, dann hier einfügen.':
+    'That is not valid JSON. In Clash: Settings → “Export Village data in JSON format”, then paste it here.',
   'Das JSON sieht nicht wie ein Dorf-Export aus (es fehlen "buildings" oder "timestamp").':
     'This JSON does not look like a village export ("buildings" or "timestamp" is missing).',
   'Die Zwischenablage ließ sich nicht lesen. Hat dein Browser gerade um Erlaubnis gefragt? Dann erlauben und nochmal auf „Einfügen“ tippen. Sonst über „Von Hand einfügen“.':
