@@ -294,7 +294,7 @@ export function progress(village, game, lang = 'de', targets = {}) {
     }
 
     const cats = Object.fromEntries(CATEGORIES[v].map(([k, t]) => [k, {
-      key: k, title: t[lang] || t.en, done: 0, total: 0, seconds: 0, totalSeconds: 0, cost: {}, items: [],
+      key: k, title: t[lang] || t.en, done: 0, total: 0, seconds: 0, totalSeconds: 0, cost: {}, items: [], doneItems: [],
     }]));
 
     for (const { id, item, cat, cap, instances, max: fixedMax } of rows) {
@@ -304,7 +304,15 @@ export function progress(village, game, lang = 'de', targets = {}) {
       const agg = {
         id, name: item.name[lang] || item.name.en, count: 0, from: Infinity, to: max, seconds: 0, cost: {},
         missing: instances.filter((i) => i.lvl === 0 && i.timer === undefined).length, // noch nicht gebaut
+        // Stufen der einzelnen Exemplare (laufende zählen als Zielstufe), aufsteigend
+        levels: instances.map((i) => (i.lvl || 0) + (typeof i.timer === 'number' ? 1 : 0)).sort((a, b) => a - b),
+        next: null, // nächste Stufe des niedrigsten Exemplars: { level, seconds, cost, resource }
       };
+      const low = agg.levels[0];
+      if (low < max) {
+        const [, sec, cost, res] = levelEntry(item, Math.max(low + 1, first)) || [0, 0, 0, ''];
+        agg.next = { level: Math.max(low + 1, first), seconds: sec, cost: res === 'Diamonds' ? 0 : cost, resource: res };
+      }
       for (const ins of instances) {
         const total = max - first + 1;
         const cur = Math.min(Math.max(ins.lvl, first - 1), max);
@@ -322,6 +330,7 @@ export function progress(village, game, lang = 'de', targets = {}) {
           if (!running && cost) agg.cost[res] = (agg.cost[res] || 0) + cost;
         }
       }
+      if (!agg.count) cats[cat].doneItems.push(agg);
       if (agg.count) {
         const c = cats[cat];
         c.items.push(agg);

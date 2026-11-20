@@ -9,6 +9,7 @@ const STORE_SLOTS = 'planner.slots'; // vom Nutzer geänderte Platzanzahl je Gru
 const STORE_BOOST = 'planner.boost'; // { time: %, cost: % } z. B. Goldpass/Season-Boost
 const LEGACY_VILLAGE = 'planner.village'; // alte Version: nur ein Dorf
 const STORE_TAB = 'planner.tab';
+const STORE_LIST = 'planner.list'; // { sort: 'total'|'fastest'|'cheapest', showDone: bool }
 const planKey = () => `planner.plan.${village?.tag || 'Dorf'}`; // [{ id, to, n }] je Dorf
 const boostKey = () => `planner.boosts.${village?.tag || 'Dorf'}`; // [{ type, at, target? }] je Dorf
 const targetKey = () => `planner.target.${village?.tag || 'Dorf'}`; // { home, builder } Ziel-Rathaus/-Meisterhütte
@@ -298,8 +299,51 @@ function renderExtras(r, now) {
   $('extras').hidden = false;
 }
 
+// Grobe Vergleichbarkeit der Ressourcen für "günstigste": Dunkles Elixier ist ca. 100× seltener
+const RESOURCE_WEIGHT = { DarkElixir: 100 };
+const nextCost = (i) => (i.next ? i.next.cost * (RESOURCE_WEIGHT[i.next.resource] || 1) : Infinity);
+const SORTS = {
+  total: { de: 'Längste Restzeit zuerst', fn: (a, b) => b.seconds - a.seconds },
+  fastest: { de: 'Schnellste nächste Stufe', fn: (a, b) => (a.next?.seconds ?? Infinity) - (b.next?.seconds ?? Infinity) },
+  cheapest: { de: 'Günstigste nächste Stufe', fn: (a, b) => nextCost(a) - nextCost(b) },
+};
+
+function listControls() {
+  const opts = { sort: 'total', showDone: false, ...readJson(STORE_LIST, {}) };
+  const save = (patch) => { localStorage.setItem(STORE_LIST, JSON.stringify({ ...opts, ...patch })); render(); };
+  return el('section', { class: 'card controls' },
+    el('label', {}, 'Sortieren: ',
+      el('select', { onchange: (e) => save({ sort: e.target.value }) },
+        Object.entries(SORTS).map(([k, d]) => el('option', { value: k, selected: k === opts.sort }, d.de)))),
+    el('label', { class: 'check' },
+      el('input', { type: 'checkbox', checked: opts.showDone, onchange: (e) => save({ showDone: e.target.checked }) }),
+      ' Fertige zeigen'));
+}
+
+function itemRow(i, tf, cf, category) {
+  const isWall = category === 'walls';
+  const counts = {};
+  for (const l of i.levels) counts[l] = (counts[l] || 0) + 1;
+  const levelsText = Object.entries(counts).map(([l, n]) => (n > 1 ? `${n}× ${l}` : l)).join(' · ');
+  const nextText = i.next
+    ? `nächste: ${i.next.level - 1}→${i.next.level} · ${i.next.seconds ? days(i.next.seconds * tf) : 'sofort'}${i.next.cost ? ` · ${costText({ [i.next.resource]: i.next.cost }, cf)}` : ''}`
+    : null;
+  const done = !i.count;
+  return el('li', { class: done ? 'done-item' : '' },
+    el('span', { class: 'grow' },
+      el('span', { class: 'name' }, i.name, el('span', { class: 'lvl' }, done ? ` ${i.to} ✓` : ` → ${i.to}`),
+        (i.levels.length > 1 || isWall) && !done ? el('span', { class: 'sub' }, `Stufen: ${levelsText}`) : null,
+        nextText ? el('span', { class: 'sub' }, nextText) : null),
+      done ? null : el('span', { class: 'time' }, el('b', {}, i.seconds ? days(i.seconds * tf) : 'sofort'),
+        el('span', { class: 'muted' }, costText(i.cost, cf)))),
+    done ? null : el('span', { class: 'adds' },
+      el('button', { class: 'add', title: 'Nächste Stufe planen', 'aria-label': `${i.name} planen`, onclick: () => addToPlan(i) }, '+'),
+      isWall ? el('button', { class: 'add ten', title: '10 Mauern planen', 'aria-label': `10× ${i.name} planen`, onclick: () => addToPlan(i, 10) }, '+10') : null));
+}
+
 function renderProgress(r) {
   const targets = readJson(targetKey(), {});
+  const list = { sort: 'total', showDone: false, ...readJson(STORE_LIST, {}) };
   const p = progress(village, game, 'de', targets);
   const b = boost();
   const tf = 1 - b.time / 100;
@@ -358,19 +402,15 @@ function renderProgress(r) {
           el('span', { class: 'name' }, c.title),
           el('span', { class: 'cat-pct' }, c.items.length ? `${String(c.percent).replace('.', ',')} %` : 'fertig ✓')),
         bar(c.percent),
-        c.items.length
-          ? el('ul', { class: 'items' }, c.items.map((i) => el('li', {},
-            el('span', { class: 'grow' },
-              el('span', { class: 'name' }, i.name, i.count > 1 ? el('span', { class: 'lvl' }, ` ×${i.count}`) : null,
-                el('span', { class: 'lvl' }, ` ${i.from}→${i.to}`)),
-              el('span', { class: 'time' }, el('b', {}, days(i.seconds * tf)),
-                el('span', { class: 'muted' }, costText(i.cost, cf)))),
-            el('button', { class: 'add', title: 'Nächste Stufe planen', 'aria-label': `${i.name} planen`, onclick: () => addToPlan(i) }, '+'))))
+        (c.items.length || (list.showDone && c.doneItems.length))
+          ? el('ul', { class: 'items' },
+            [...c.items].sort(SORTS[list.sort]?.fn || SORTS.total.fn).map((i) => itemRow(i, tf, cf, c.key)),
+            list.showDone ? c.doneItems.map((i) => itemRow(i, tf, cf, c.key)) : null)
           : el('p', { class: 'muted small' }, 'Alles auf Maximum.'),
       )),
     ));
   }
-  $('progress').replaceChildren(...sections, renderBoost(b));
+  $('progress').replaceChildren(listControls(), ...sections, renderBoost(b));
 }
 
 function bar(percent) {
@@ -399,16 +439,23 @@ function renderBoost(b) {
 
 // ---------- Plan ----------
 
-function addToPlan(i) {
+function addToPlan(i, times = 1) {
   const plan = getPlan();
-  const step = nextStep(village, plan, i.id, i.to, i.missing);
-  if (!step) {
+  const added = [];
+  for (let k = 0; k < times; k++) {
+    const step = nextStep(village, plan, i.id, i.to, i.missing);
+    if (!step) break;
+    plan.push(step);
+    added.push(step);
+  }
+  if (!added.length) {
     toast(`${i.name}: schon alles bis Stufe ${i.to} geplant`);
     return;
   }
-  plan.push(step);
   setPlan(plan);
-  toast(`${i.name} ${step.to - 1}→${step.to} geplant`);
+  toast(added.length === 1
+    ? `${i.name} ${added[0].to - 1}→${added[0].to} geplant`
+    : `${added.length}× ${i.name} geplant`);
   render();
 }
 
