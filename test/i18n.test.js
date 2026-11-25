@@ -15,7 +15,7 @@ const keys = new Set([
   ...[...app.matchAll(/\['\w+', '([^']+)'\]/g)].map((m) => m[1]), // FILTERS
   ...[...app.matchAll(/\{ de: '([^']+)', fn:/g)].map((m) => m[1]), // SORTS
   ...[...app.matchAll(/(?:common|epic|legendary): '([^']+)'/g)].map((m) => m[1]), // RARITY
-  ...[...app.matchAll(/(?:hall|lab|gear): '([^']+)'/g)].map((m) => m[1]), // B.O.B.-Blockaden
+  ...[...app.matchAll(/\{ hall: '([^']+)', lab: '([^']+)', gear: '([^']+)' \}/g)].flatMap((m) => m.slice(1)), // B.O.B.-Blockaden
   ...[...html.matchAll(/data-i18n(?:-html)?="([^"]+)"/g)].map((m) => m[1]),
 ]);
 

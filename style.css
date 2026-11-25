@@ -262,3 +262,82 @@ select.inline {
 .carousel::-webkit-scrollbar { display: none; }
 .carousel > .slide { flex: 0 0 100%; scroll-snap-align: start; margin-bottom: 0; }
 .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 99px; font-size: .72rem; color: #0c2614; background: var(--free); }
+
+/* ===================== Farben ===================== */
+:root {
+  --c-home: #f2b705;   /* Heimatdorf-Bauarbeiter */
+  --c-lab: #b48cff;    /* Labor */
+  --c-pets: #5fd08a;   /* Begleiter */
+  --c-bb: #6aa8ff;     /* Nachtdorf-Bauarbeiter */
+  --c-star: #7fd4ff;   /* Sternlabor */
+  --c-equip: #ff9f6b;  /* Ausrüstung */
+  --r-gold: #f5c542;
+  --r-elixir: #e86bd8;
+  --r-dark: #8c6bff;
+  --r-gold2: #e0b45c;
+  --r-elixir2: #a88bff;
+  --r-gem: #49d48f;
+  --r-shiny: #8fd3ff;
+  --r-glowy: #d48bff;
+  --r-starry: #ffd36b;
+}
+
+h1 { background: linear-gradient(90deg, #ffd25a, #ff9f6b 55%, #e86bd8); -webkit-background-clip: text; background-clip: text; color: transparent; }
+
+/* Gruppenfarbe: farbige Kante + leichte Tönung */
+.card.group.g-home, .items li.ev.g-home { --gc: var(--c-home); }
+.card.group.g-lab, .items li.ev.g-lab { --gc: var(--c-lab); }
+.card.group.g-pets, .items li.ev.g-pets { --gc: var(--c-pets); }
+.card.group.g-bb, .items li.ev.g-bb { --gc: var(--c-bb); }
+.card.group.g-star, .items li.ev.g-star { --gc: var(--c-star); }
+.card.group.g-equip { --gc: var(--c-equip); }
+.card.group[class*="g-"] {
+  border-left: 3px solid var(--gc);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--gc) 9%, var(--card)), var(--card) 55%);
+}
+.card.group[class*="g-"] h3 { color: color-mix(in srgb, var(--gc) 70%, var(--text)); }
+.items li.ev[class*="g-"] { border-left: 3px solid var(--gc); padding-left: 10px; }
+.items li.ev[class*="g-"] .at { color: var(--gc); }
+.card.group[class*="g-"] .bar span, .card.group[class*="g-"] .bar.thin span { background: var(--gc); }
+
+/* Ressourcen: farbiger Punkt + Betrag */
+.costs { display: inline-flex; flex-wrap: wrap; gap: 4px 10px; justify-content: flex-end; }
+.res { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.res::before { content: ''; display: inline-block; width: .7em; height: .7em; margin-right: .3em; border-radius: 50%; vertical-align: -.02em; background: var(--rc, var(--muted)); box-shadow: 0 0 0 2px color-mix(in srgb, var(--rc, var(--muted)) 25%, transparent); }
+.res-Gold { --rc: var(--r-gold); }
+.res-Elixir { --rc: var(--r-elixir); }
+.res-DarkElixir { --rc: var(--r-dark); }
+.res-Gold2 { --rc: var(--r-gold2); }
+.res-Elixir2 { --rc: var(--r-elixir2); }
+.res-Diamonds { --rc: var(--r-gem); }
+.res-CommonOre { --rc: var(--r-shiny); }
+.res-RareOre { --rc: var(--r-glowy); }
+.res-EpicOre { --rc: var(--r-starry); border-radius: 0; }
+.prep .costs, .prep-line .costs { justify-content: flex-start; }
+.prep-line { color: var(--text); }
+
+/* Fortschrittsbalken mit Verlauf */
+.bar span { background: linear-gradient(90deg, #f2b705, #ff9f6b); }
+
+/* Reiter */
+.tabs button[aria-selected="true"] { background: linear-gradient(180deg, rgba(242,183,5,.18), rgba(242,183,5,.06)); }
+
+/* Heute */
+.card.today { background: linear-gradient(135deg, rgba(242,183,5,.10), var(--card) 60%); }
+
+/* Trank-Leiste */
+.quick { background: linear-gradient(135deg, rgba(180,140,255,.10), var(--card) 60%); }
+.quick-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin: 8px 0 6px; }
+.quick-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 6px; border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--qc) 45%, var(--line)); background: color-mix(in srgb, var(--qc) 10%, var(--card)); }
+.quick-btn .q-icon { font-size: 1.5rem; line-height: 1.2; }
+.quick-btn .q-name { font-size: .8rem; font-weight: 600; text-align: center; }
+.quick-btn .q-state { font-size: .72rem; color: var(--muted); }
+.quick-btn.active { background: color-mix(in srgb, var(--qc) 25%, var(--card)); border-color: var(--qc); }
+.quick-btn.active .q-state { color: var(--qc); font-weight: 600; }
+.q-builderPotion { --qc: var(--c-home); }
+.q-researchPotion { --qc: var(--c-lab); }
+.q-clockTowerPotion { --qc: var(--c-bb); }
+
+/* Tages-Karussell: Tag farbig */
+.card.day .group-head h3 { color: #ffd25a; }

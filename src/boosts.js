@@ -90,7 +90,7 @@ export function applyBoosts(running, events, game, village) {
       }
       saved += before - r.finishAt;
     }
-    applied.push({ ...ev, saved, mult, sec });
+    applied.push({ ...ev, saved, mult, sec, start, end: start + sec * 1000 });
   }
   list.sort((a, b) => a.finishAt - b.finishAt);
   return { running: list, applied };

@@ -124,3 +124,9 @@ test('Forschungstrank: zwei gleichzeitig = 24-fach für 2 h, nicht doppelt gezä
   const { running } = applyBoosts(run, [{ type: 'researchPotion', at: t0 }, { type: 'researchPotion', at: t0 }], game, village);
   assert.equal(running[0].finishAt, t0 + 1.25 * H); // 30 h Arbeit / 24 = 1,25 h < 2 h Boost
 });
+
+test('Eingetragene Tränke wissen, wann sie wirken (für "aktiv bis")', () => {
+  const run = [{ id: 1, level: 2, group: 'home_builders', finishAt: t0 + 30 * H }];
+  const { applied } = applyBoosts(run, [{ type: 'builderPotion', at: t0 }, { type: 'builderPotion', at: t0 + 0.5 * H }], game, village);
+  assert.deepEqual(applied.map((a) => [a.start - t0, a.end - t0]), [[0, H], [H, 2 * H]]);
+});

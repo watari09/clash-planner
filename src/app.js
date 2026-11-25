@@ -291,7 +291,7 @@ function renderRunning(r, now) {
       );
     }));
     if (!g.items.length) list.append(el('li', { class: 'muted' }, t('Nichts in Arbeit')));
-    return el('section', { class: `card group ${g.key.startsWith('builder') || g.key === 'star_lab' ? 'bb' : 'home'}` }, head, list);
+    return el('section', { class: `card group ${groupClass(g.key)}` }, head, list);
   }));
 }
 
@@ -308,6 +308,28 @@ function runningShare(i, now) {
   return Math.max(0, Math.min(100, 100 - ((i.finishAt - now) / 1000 / total) * 100));
 }
 
+/** Einen Boost (Trank, Helfer, Uhrenturm …) jetzt eintragen und die Wirkung melden. */
+function logBoost(type, target, recurrent) {
+  setBoosts([...getBoosts(), { type, at: Date.now(), ...(target ? { target } : {}), ...(recurrent ? { recurrent: true } : {}) }]);
+  render();
+  const last = current().boosts.filter((b) => b.type === type).at(-1);
+  const name = BOOST_TYPES[type][LANG] || BOOST_TYPES[type].de;
+  toast(last?.saved ? t('{b}: {d} gespart', { b: name, d: formatDuration(Math.round(last.saved / 1000)) }) : t('{b} eingetragen – betrifft gerade kein laufendes Upgrade', { b: name }));
+}
+
+// Farbe je Gruppe (CSS-Klasse) und kleine Symbole für Boosts
+const groupClass = (g) => ({ home_builders: 'g-home', lab: 'g-lab', pets: 'g-pets', builder_builders: 'g-bb', star_lab: 'g-star', equipment: 'g-equip' }[g] || '');
+const BOOST_ICON = { builderPotion: '🔨', researchPotion: '⚗', clockTowerPotion: '⏱', petPotion: '🐾', builderBite: '🍪', labLicorice: '🍲', clockTower: '⏱', builderApprentice: '👷', labAssistant: '🧑‍🔬' };
+
+/** Kosten mit farbigem Ressourcen-Punkt je Ressource (statt nur Text). */
+function costEl(cost, factor = 1) {
+  const parts = Object.entries(cost || {}).filter(([, n]) => n > 0);
+  if (!parts.length) return el('span', { class: 'muted' }, '–');
+  return el('span', { class: 'costs' }, parts.map(([r, n]) => el('span', {
+    class: `res res-${r}`, title: (RESOURCES[r] || ORES[r])?.[LANG] || r,
+  }, fmtAmount.format(Math.round(n * factor)))));
+}
+
 function renderExtras(r, now) {
   const row = (name, at) => {
     const left = Math.round((at - now) / 1000);
@@ -322,13 +344,7 @@ function renderExtras(r, now) {
   // Eintragen: welche Boosts passen zu diesem Dorf?
   const slots = slotsByGroup(r, now);
   const available = Object.entries(BOOST_TYPES).filter(([, d]) => d.groups.some((g) => (slots[g] || 0) > 0));
-  const add = (type, target, recurrent) => {
-    setBoosts([...getBoosts(), { type, at: Date.now(), ...(target ? { target } : {}), ...(recurrent ? { recurrent: true } : {}) }]);
-    render();
-    const last = current().boosts.at(-1);
-    const name = BOOST_TYPES[type][LANG] || BOOST_TYPES[type].de;
-    toast(last?.saved ? t('{b}: {d} gespart', { b: name, d: formatDuration(Math.round(last.saved / 1000)) }) : t('{b} eingetragen – betrifft gerade kein laufendes Upgrade', { b: name }));
-  };
+  const add = logBoost;
   // Helfer und Uhrenturm haben eine Abklingzeit: erst danach eintragbar
   const readyAt = (type, d) => (d.helper ? r.helpers.find((h) => h.id === d.helper)?.readyAt
     : type === 'clockTower' ? r.clockTowerReadyAt : 0) || 0;
@@ -439,7 +455,7 @@ function itemRow(i, tf, cf, category) {
         (i.levels.length > 1 || isWall) && !done ? el('span', { class: 'sub' }, t('Stufen: {l}', { l: levelsText })) : null,
         nextText ? el('span', { class: 'sub' }, nextText) : null),
       done ? null : el('span', { class: 'time' }, el('b', {}, i.seconds ? days(i.seconds * tf) : t('sofort')),
-        el('span', { class: 'muted' }, costText(i.cost, cf)))),
+        costEl(i.cost, cf))),
     done || i.supercharge ? null : el('span', { class: 'adds' },
       el('button', { class: 'add', title: t('Nächste Stufe planen'), 'aria-label': t('{name} planen', { name: i.name }), onclick: () => addToPlan(i) }, '+'),
       isWall ? el('button', { class: 'add ten', title: t('10 Mauern planen'), 'aria-label': t('10× {name} planen', { name: i.name }), onclick: () => addToPlan(i, 10) }, '+10') : null,
@@ -516,7 +532,7 @@ function renderProgress(r) {
         x.petSeconds ? el('dt', {}, t('Begleiterhaus')) : null,
         x.petSeconds ? el('dd', {}, days(x.petSeconds * tf)) : null,
         el('dt', {}, t('Kosten')),
-        el('dd', {}, costText(allCost, cf)),
+        el('dd', {}, costEl(allCost, cf)),
       ),
       x.categories.filter((c) => c.total > 0).map((c) => el('details', {
         class: 'cat',
@@ -564,7 +580,7 @@ function gearList() {
           el('span', { class: 'name' }, c.name, el('span', { class: 'lvl' }, c.geared ? ' ✓' : ''),
             c.geared ? null : el('span', { class: 'sub' },
               `${okHome ? '✓' : '○'} ${c.name} ${c.homeLevel}/${c.needHome} · ${okBB ? '✓' : '○'} ${c.bbName} ${c.bbLevel}/${c.needBB}`)),
-          c.geared ? null : el('span', { class: 'time' }, el('b', {}, days(c.seconds)), el('span', { class: 'muted' }, costText(c.cost)))),
+          c.geared ? null : el('span', { class: 'time' }, el('b', {}, days(c.seconds)), costEl(c.cost))),
         c.geared ? null : el('span', { class: 'adds' },
           el('button', {
             class: 'add', title: t('Gear-Up planen'), 'aria-label': t('{name} planen', { name: c.name }),
@@ -613,7 +629,7 @@ function renderBob() {
       el('dt', {}, t('Sternlabor')), el('dd', {}, days(s.totals.labSeconds)),
       el('dt', {}, t('Gear-Ups')), el('dd', {}, days(s.totals.gearSeconds)),
       el('dt', {}, t('Frühestens')), el('dd', {}, el('b', {}, days(s.totals.seconds))),
-      el('dt', {}, t('Kosten')), el('dd', {}, costText(s.totals.cost))),
+      el('dt', {}, t('Kosten')), el('dd', {}, costEl(s.totals.cost))),
   );
 }
 
@@ -737,7 +753,7 @@ function renderPlan(r, now) {
       ...steps.map((s) => ({ index: s.index, node: row(s.index, [
         el('span', { class: 'name' }, s.kind === 'gear' ? t('{name} umrüsten', { name: s.name }) : s.name,
           s.kind === 'gear' ? null : el('span', { class: 'lvl' }, ` ${s.from}→${s.to}`),
-          el('br'), el('span', { class: 'muted small' }, Object.keys(s.costs).length ? costText(s.costs) : t('kostenlos'))),
+          el('br'), Object.keys(s.costs).length ? costEl(s.costs) : el('span', { class: 'muted small' }, t('kostenlos'))),
         s.kind === 'equip'
           ? el('span', { class: 'time' }, el('b', {}, t('sofort')))
           : el('span', { class: 'time' }, el('b', {}, t('ab {t}', { t: when(s.start) })),
@@ -763,10 +779,10 @@ function renderPlan(r, now) {
     el('ul', { class: 'items' }, sim.needs.filter((s) => Object.keys(s.costs).length).map((s) => el('li', {},
       el('span', { class: 'name' }, el('b', {}, s.kind === 'equip' ? t('sofort') : when(s.start)), el('br'),
         s.kind === 'gear' ? t('{name} umrüsten', { name: s.name }) : `${s.name} ${s.from}→${s.to}`, el('br'),
-        el('span', { class: 'muted small' }, costText(s.costs))),
+        costEl(s.costs)),
       el('span', { class: 'time' }, el('span', { class: 'cum' }, t('bis dahin')),
-        el('b', {}, costText(Object.fromEntries(Object.keys(s.costs).map((k) => [k, s.cumulative[k]])))))))),
-    el('dl', { class: 'facts' }, el('dt', {}, t('Gesamt')), el('dd', {}, costText(sim.total))),
+        el('b', {}, costEl(Object.fromEntries(Object.keys(s.costs).map((k) => [k, s.cumulative[k]])))))))),
+    el('dl', { class: 'facts' }, el('dt', {}, t('Gesamt')), el('dd', {}, costEl(sim.total))),
     el('div', { class: 'row' },
       el('button', { class: 'primary', onclick: downloadPlanIcs }, t('Starts in Kalender')),
       el('button', { class: 'ghost', onclick: () => { if (confirm(t('Ganzen Plan löschen?'))) { setPlan([]); render(); } } }, t('Plan leeren'))),
@@ -854,7 +870,7 @@ function picker(key, group, at) {
     shown.length
       ? el('ul', { class: 'items' }, shown.map((i) => el('li', {},
         el('span', { class: 'name' }, i.name,
-          i.next ? el('span', { class: 'sub' }, `${i.next.level - 1}→${i.next.level} · ${i.next.seconds ? days(i.next.seconds) : t('sofort')}${i.next.cost ? ` · ${costText({ [i.next.resource]: i.next.cost })}` : ''}`) : null),
+          i.next ? el('span', { class: 'sub' }, `${i.next.level - 1}→${i.next.level} · ${i.next.seconds ? days(i.next.seconds) : t('sofort')} `, i.next.cost ? costEl({ [i.next.resource]: i.next.cost }) : null) : null),
         el('button', { class: 'add small-add', 'aria-label': t('{name} planen', { name: i.name }), onclick: () => { openPicker = null; addToPlan(i); } }, '+'))))
       : el('p', { class: 'muted small' }, t('Nichts mehr offen.')),
     el('button', { class: 'ghost small', onclick: () => { openPicker = null; showTab('progress'); } },
@@ -878,14 +894,14 @@ function renderDash(r, now) {
     const u = e.item;
     const next = e.next ?? follow.get(`${u.id}:${u.finishAt}`);
     const key = `f:${u.id}:${u.finishAt}`;
-    return el('li', { class: `ev ${u.group.startsWith('builder') || u.group === 'star_lab' ? 'bb' : 'home'}` },
+    return el('li', { class: `ev ${groupClass(u.group)}` },
       el('span', { class: 'grow' },
         el('span', { class: 'at' }, clock(e.at)),
         el('span', { class: 'name' }, t('{name} fertig', { name: `${u.name}${u.gearUp ? ` (${t('Gear-Up')})` : u.supercharge ? ` ⚡${u.supercharge}` : ` → ${u.level}`}` }),
           el('span', { class: 'sub' }, gname(u.group), e.planned ? el('span', { class: 'tag' }, t('geplant')) : null),
           next
             ? el('span', { class: 'next' }, t('Danach: {what}', { what: stepText(next) }),
-              Object.keys(next.costs).length ? el('span', { class: 'prep' }, t('bereitlegen: {c}', { c: costText(next.costs) })) : null)
+              Object.keys(next.costs).length ? el('span', { class: 'prep' }, t('bereitlegen:'), ' ', costEl(next.costs)) : null)
             : el('span', { class: 'next none' }, t('Danach: nichts geplant')))),
       el('span', { class: 'adds' }, planButton(key, u.group)),
       picker(key, u.group, u.finishAt));
@@ -895,7 +911,7 @@ function renderDash(r, now) {
       el('span', { class: 'at' }, e.at <= now + 60e3 ? t('jetzt') : clock(e.at)),
       el('span', { class: 'name' }, t('Starten: {what}', { what: stepText(e.step) }),
         el('span', { class: 'sub' }, gname(e.step.group)),
-        Object.keys(e.step.costs).length ? el('span', { class: 'prep' }, costText(e.step.costs)) : null)));
+        Object.keys(e.step.costs).length ? el('span', { class: 'prep' }, costEl(e.step.costs)) : null)));
   const rows = (entries) => entries
     .filter((e) => e.type === 'finish' || !shownSteps.has(e.step.index))
     .map((e) => (e.type === 'finish' ? finishRow(e) : startRow(e)));
@@ -922,7 +938,8 @@ function renderDash(r, now) {
   const cards = [el('section', { class: 'card today' },
     el('div', { class: 'group-head' }, el('h3', {}, t('Heute zu tun')), el('span', { class: 'muted small' }, new Intl.DateTimeFormat(locale(), { weekday: 'long', day: '2-digit', month: '2-digit' }).format(new Date(now)))),
     todo.length ? el('ul', { class: 'items' }, todo) : el('p', { class: 'muted' }, t('Heute steht nichts an.')),
-    Object.keys(todayBucket.prepare).length ? el('p', { class: 'prep-line' }, t('Heute bereitlegen: {c}', { c: costText(todayBucket.prepare) })) : null)];
+    Object.keys(todayBucket.prepare).length ? el('p', { class: 'prep-line' }, t('Heute bereitlegen:'), ' ', costEl(todayBucket.prepare)) : null)];
+  cards.push(quickBoosts(r, now));
 
   if (!d.planned) {
     cards.push(el('section', { class: 'card hint-card' },
@@ -939,7 +956,7 @@ function renderDash(r, now) {
       return el('section', { class: 'card day slide' },
         el('div', { class: 'group-head' },
           el('h3', {}, tomorrow ? t('Morgen') : new Intl.DateTimeFormat(locale(), { weekday: 'long', day: '2-digit', month: '2-digit' }).format(date)),
-          Object.keys(b.prepare).length ? el('span', { class: 'prep' }, costText(b.prepare)) : null),
+          Object.keys(b.prepare).length ? costEl(b.prepare) : null),
         el('ul', { class: 'items' }, rows(b.entries)));
     });
     const track = el('div', { class: 'carousel', tabindex: '0', 'aria-label': t('Nächste Tage') }, slides);
@@ -963,6 +980,23 @@ function renderDash(r, now) {
     requestAnimationFrame(() => { track.scrollLeft = Math.min(dayIndex, slides.length - 1) * track.clientWidth; update(); });
   }
   $('dash').replaceChildren(...cards.filter(Boolean));
+}
+
+/** Schnell-Leiste: die häufigsten Tränke mit einem Tipp eintragen; zeigt, ob gerade einer wirkt. */
+function quickBoosts(r, now) {
+  const slots = slotsByGroup(r, now);
+  const types = ['builderPotion', 'researchPotion', ...((slots.builder_builders || slots.star_lab) ? ['clockTowerPotion'] : [])];
+  return el('section', { class: 'card quick' },
+    el('h3', {}, t('Trank benutzt?')),
+    el('div', { class: 'quick-row' }, types.map((type) => {
+      const active = (r.boosts || []).filter((b) => (b.type === type || (type === 'clockTowerPotion' && b.type === 'clockTower')) && b.end > now)
+        .reduce((m, b) => Math.max(m, b.end), 0);
+      return el('button', { class: `quick-btn q-${type} ${active ? 'active' : ''}`, onclick: () => logBoost(type) },
+        el('span', { class: 'q-icon', 'aria-hidden': 'true' }, BOOST_ICON[type]),
+        el('span', { class: 'q-name' }, BOOST_TYPES[type][LANG] || BOOST_TYPES[type].de),
+        el('span', { class: 'q-state' }, active ? t('aktiv bis {t}', { t: fmtToday.format(new Date(active)) }) : t('jetzt eintragen')));
+    })),
+    el('p', { class: 'muted small' }, t('Mehrfach tippen = mehrere Tränke (verlängert die Dauer). Rückgängig unter „Laufend“ → Helfer & Boosts.')));
 }
 
 // ---------- Magische Gegenstände ----------
