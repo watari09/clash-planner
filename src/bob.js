@@ -1,7 +1,7 @@
 // B.O.B.s Zentrale: Aufgaben für den 6. Bauarbeiter im Heimatdorf und der kürzeste Weg dorthin.
 // Reine Funktionen; Aufgaben und Werte kommen aus den Spieldaten (game.bob, gearUp, Stufen).
 
-import { levelEntry, maxLevel, schedule } from './village.js';
+import { levelEntry, maxLevel, schedule, levelTimer, isGearing } from './village.js';
 
 export const TASK_TEXT = {
   GearUp: { de: 'Verteidigungen im Heimatdorf umrüsten (Gear-Up)', en: 'Gear up defenses in the Home Village' },
@@ -17,8 +17,9 @@ const STAR_LAB = 1000046;
 function instances(list) {
   const out = [];
   for (const e of list || []) {
-    const lvl = (e.lvl || 0) + (typeof e.timer === 'number' ? 1 : 0);
-    for (let i = 0; i < (e.cnt || 1); i++) out.push({ id: e.data, lvl, gearUp: !!e.gear_up });
+    const lvl = (e.lvl || 0) + (typeof levelTimer(e) === 'number' ? 1 : 0);
+    // ein laufender Gear-Up zählt für die Aufgabe schon mit
+    for (let i = 0; i < (e.cnt || 1); i++) out.push({ id: e.data, lvl, gearUp: !!e.gear_up || isGearing(e) });
   }
   return out;
 }

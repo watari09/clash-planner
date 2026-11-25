@@ -271,9 +271,10 @@ function renderRunning(r, now) {
       const left = Math.round((i.finishAt - now) / 1000);
       return el('li', { class: left <= 0 ? 'done' : '' },
         el('span', { class: 'name' }, i.name,
-          el('span', { class: 'lvl' }, i.supercharge ? ` ⚡${i.supercharge}` : ` → ${i.level}`),
+          el('span', { class: 'lvl' }, i.supercharge ? ` ⚡${i.supercharge}` : i.gearUp ? ` · ${t('Gear-Up')}` : ` → ${i.level}`),
           runningShare(i, now) != null ? el('span', { class: 'bar thin' }, el('span', { style: `width:${runningShare(i, now)}%` })) : null,
-          i.helper || i.goblin ? el('span', { class: 'sub' }, [
+          i.helper || i.goblin || i.master ? el('span', { class: 'sub' }, [
+            i.master ? t('Meisterbauarbeiter im Heimatdorf') : null,
             i.helper ? (i.group === 'lab' ? t('Laborgehilfe arbeitet mit') : t('Lehrling arbeitet mit')) : null,
             i.recurrentHelper ? t('täglich') : null,
             i.goblin ? t('Goblin-Bauarbeiter') : null,
@@ -292,9 +293,11 @@ function renderRunning(r, now) {
 function runningShare(i, now) {
   const item = game.items[String(i.id)];
   if (!item) return null;
-  const total = i.supercharge
-    ? item.supercharge?.levels?.[i.supercharge - 1]?.[0]
-    : levelEntry(item, i.level)?.[1];
+  const total = i.gearUp
+    ? item.gearUp?.sec
+    : i.supercharge
+      ? item.supercharge?.levels?.[i.supercharge - 1]?.[0]
+      : levelEntry(item, i.level)?.[1];
   if (!total) return null;
   return Math.max(0, Math.min(100, 100 - ((i.finishAt - now) / 1000 / total) * 100));
 }
@@ -542,10 +545,14 @@ function gearList() {
     ontoggle: (e) => { if (e.target.open) openCats.add(key); else openCats.delete(key); },
   },
     el('summary', {}, el('span', { class: 'name' }, t('Gear-Ups')),
-      el('span', { class: 'cat-pct' }, `${cands.filter((c) => c.geared).length}/${cands.length}`)),
+      el('span', { class: 'cat-pct' }, `${cands.filter((c) => c.geared).length}/${cands.length}${cands.some((c) => c.gearing) ? ' ⏳' : ''}`)),
     el('ul', { class: 'items' }, cands.map((c) => {
       const okHome = c.homeLevel >= c.needHome;
       const okBB = c.bbLevel >= c.needBB;
+      if (c.gearing) {
+        return el('li', {}, el('span', { class: 'name' }, c.name, el('span', { class: 'lvl' }, ` · ${t('läuft')}`),
+          el('span', { class: 'sub' }, t('Meisterbauarbeiter im Heimatdorf'))));
+      }
       return el('li', { class: c.geared ? 'done-item' : '' },
         el('span', { class: 'grow' },
           el('span', { class: 'name' }, c.name, el('span', { class: 'lvl' }, c.geared ? ' ✓' : ''),
@@ -818,7 +825,7 @@ function renderDash(r, now) {
     d.upcoming.length
       ? el('ul', { class: 'items' }, d.upcoming.map((u) => el('li', { class: `stack ${u.group.startsWith('builder') || u.group === 'star_lab' ? 'bb' : 'home'}` },
         el('span', { class: 'row-line' },
-          el('span', { class: 'name' }, u.name, el('span', { class: 'lvl' }, u.supercharge ? ` ⚡${u.supercharge}` : ` → ${u.level}`)),
+          el('span', { class: 'name' }, u.name, el('span', { class: 'lvl' }, u.supercharge ? ` ⚡${u.supercharge}` : u.gearUp ? ` · ${t('Gear-Up')}` : ` → ${u.level}`)),
           el('span', { class: 'time' }, el('b', {}, formatDuration(Math.round((u.finishAt - now) / 1000))), el('span', { class: 'muted' }, when(u.finishAt)))),
         el('span', { class: 'sub' }, gname(u.group)),
         nextLine(u.next))))

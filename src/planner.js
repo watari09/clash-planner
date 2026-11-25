@@ -1,7 +1,7 @@
 // Upgrade-Planer: geplante Upgrades auf Bauarbeiter/Labore verteilen und daraus
 // Start-/Endzeiten und den Ressourcen-Bedarf über die Zeit berechnen. Reine Funktionen.
 
-import { levelEntry } from './village.js';
+import { levelEntry, levelTimer, isGearing } from './village.js';
 
 /** Wer ein Upgrade ausführt – dieselben Gruppen wie bei den laufenden Upgrades. */
 export function groupOf(item) {
@@ -23,19 +23,25 @@ export function groupOf(item) {
 
 /** Gear-Up-fähige Heimatdorf-Gebäude mit Stand der Voraussetzungen. */
 export function gearCandidates(village, game, lang = 'de') {
-  const top = (list, id) => Math.max(0, ...(list || []).filter((e) => e.data === id).map((e) => (e.lvl || 0) + (typeof e.timer === 'number' ? 1 : 0)));
+  const top = (list, id) => Math.max(0, ...(list || []).filter((e) => e.data === id).map((e) => (e.lvl || 0) + (typeof levelTimer(e) === 'number' ? 1 : 0)));
   return Object.entries(game.items).filter(([, it]) => it.gearUp).map(([id, it]) => {
     const g = it.gearUp;
     const geared = (village.buildings || []).some((e) => e.data === Number(id) && e.gear_up);
+    const gearing = (village.buildings || []).some((e) => e.data === Number(id) && isGearing(e));
     const owned = (village.buildings || []).some((e) => e.data === Number(id));
     return {
       id: Number(id),
       name: it.name[lang] || it.name.en,
       geared,
+      gearing, // läuft gerade (Meisterbauarbeiter)
       owned,
       homeLevel: top(village.buildings, Number(id)),
       needHome: g.from,
       bbLevel: top(village.buildings2, g.requires),
+      // Ist die Nachtdorf-Voraussetzung erst mit einem laufenden Ausbau erfüllt: ab wann?
+      bbReadyAt: Math.max(0, ...(village.buildings2 || [])
+        .filter((e) => e.data === g.requires && typeof e.timer === 'number' && (e.lvl || 0) + 1 >= g.requiresLevel && (e.lvl || 0) < g.requiresLevel)
+        .map((e) => (village.timestamp + e.timer) * 1000)),
       needBB: g.requiresLevel,
       bbName: game.items[String(g.requires)]?.name[lang],
       seconds: g.sec,
@@ -59,7 +65,7 @@ function instances(village) {
     'buildings2', 'traps2', 'heroes2', 'units2'];
   for (const s of sections) {
     for (const e of village[s] || []) {
-      const lvl = (e.lvl || 0) + (typeof e.timer === 'number' ? 1 : 0);
+      const lvl = (e.lvl || 0) + (typeof levelTimer(e) === 'number' ? 1 : 0);
       for (let i = 0; i < (e.cnt || 1); i++) (out[e.data] ||= []).push(lvl);
     }
   }
@@ -124,7 +130,7 @@ export function simulate(village, game, plan, running, slots, options = {}) {
   // Exemplare mit Zeitpunkt, ab dem sie weiter ausgebaut werden können (laufende: erst wenn fertig)
   const levels = {};
   for (const [id, lvls] of Object.entries(exported)) {
-    const runs = running.filter((r) => String(r.id) === id).map((r) => ({ level: r.level, at: r.finishAt }));
+    const runs = running.filter((r) => String(r.id) === id && !r.gearUp).map((r) => ({ level: r.level, at: r.finishAt }));
     levels[id] = lvls.map((lvl) => {
       const i = runs.findIndex((x) => x.level === lvl);
       const readyAt = i >= 0 ? runs.splice(i, 1)[0].at : now;
@@ -156,11 +162,11 @@ export function simulate(village, game, plan, running, slots, options = {}) {
     if (e.kind === 'gear') {
       const c = gearCands.get(e.id);
       if (!item || !c) { dropped.push({ ...e, index, reason: 'unknown' }); continue; }
-      if (c.geared) { dropped.push({ ...e, index, reason: 'done' }); continue; }
+      if (c.geared || c.gearing) { dropped.push({ ...e, index, reason: 'done' }); continue; }
       if (c.homeLevel < c.needHome || c.bbLevel < c.needBB) { dropped.push({ ...e, index, reason: 'blocked', gear: c }); continue; }
       const queue = free.builder_builders;
       if (!queue?.length) { dropped.push({ ...e, index, reason: 'unknown' }); continue; }
-      const start = Math.max(queue.shift(), now);
+      const start = Math.max(queue.shift(), now, c.bbReadyAt || 0);
       const end = start + Math.round(c.seconds * timeFactor) * 1000;
       queue.push(end);
       queue.sort((a, b) => a - b);

@@ -3,6 +3,14 @@ import { boostedFinish, recurrentFinish } from './boosts.js';
 // Auswertung des Dorf-JSON aus Clash of Clans (Einstellungen → „Dorfdaten im JSON-Format exportieren“).
 // Reine Funktionen ohne DOM, damit sie auch in Node getestet werden können.
 
+/**
+ * Laufender Gear-Up: Gebäude mit Timer und "gear_up": 0. Den macht der Meisterbauarbeiter im
+ * Heimatdorf; der Timer gehört dann zum Gear-Up, nicht zu einer neuen Stufe.
+ */
+export const isGearing = (e) => e.gear_up === 0 && typeof e.timer === 'number';
+/** Timer einer Stufen-Erhöhung (undefined bei Gear-Up oder wenn nichts läuft). */
+export const levelTimer = (e) => (isGearing(e) ? undefined : e.timer);
+
 /** Spielobjekte, die gezählt werden. */
 export const IDS = {
   townHall: 1000001,
@@ -87,6 +95,14 @@ export function analyze(village, game, lang = 'de') {
     for (const e of village[section] || []) {
       if (typeof e.timer !== 'number') continue;
       const item = game.items[String(e.data)];
+      if (isGearing(e)) {
+        // Meisterbauarbeiter im Heimatdorf: belegt einen Nachtdorf-Bauarbeiter, keinen Heimatdorf-Platz
+        running.push({
+          id: e.data, name: itemName(game, e.data, lang), section, group: 'builder_builders',
+          level: e.lvl || 0, gearUp: true, master: true, finishAt: exportedAt + e.timer * 1000,
+        });
+        continue;
+      }
       // Gebäude auf Max-Stufe mit Timer: läuft ein Supercharge
       const supercharging = item?.supercharge && (e.lvl || 0) >= item.levels.length;
       let finishAt = exportedAt + e.timer * 1000;
@@ -94,7 +110,7 @@ export function analyze(village, game, lang = 'de') {
         finishAt = boostedFinish(finishAt, exportedAt, helperMult(group), e.helper_timer);
       }
       // Fest zugeteilter Helfer: ab dem nächsten Arbeitstag jeden Tag 1 h, bis das Upgrade fertig ist
-      if (e.recurrent_helper) {
+      if (e.recurrent_helper || e.helper_recurrent) {
         finishAt = recurrentFinish(finishAt, Math.max(dayEnd, exportedAt), helperMult(group), 3600);
       }
       running.push({
@@ -106,9 +122,18 @@ export function analyze(village, game, lang = 'de') {
         supercharge: supercharging ? (e.supercharge || 0) + 1 : undefined,
         finishAt,
         helper: typeof e.helper_timer === 'number' && e.helper_timer > 0,
-        recurrentHelper: !!e.recurrent_helper,
+        recurrentHelper: !!(e.recurrent_helper || e.helper_recurrent),
         goblin: !!e.extra, // Goblin-Bauarbeiter aus einem Event
       });
+    }
+  }
+  // Bauarbeitertrank, der beim Export noch wirkt (boosts.builder_boost = Restsekunden):
+  // beschleunigt die Heimatdorf-Bauarbeiter und den Meisterbauarbeiter im Heimatdorf
+  const potionLeft = village.boosts?.builder_boost || 0;
+  if (potionLeft > 0) {
+    const mult = game.boosts?.builderPotion?.mult || 10;
+    for (const r of running) {
+      if (r.group === 'home_builders' || r.master) r.finishAt = boostedFinish(r.finishAt, exportedAt, mult, potionLeft);
     }
   }
   running.sort((a, b) => a.finishAt - b.finishAt);
@@ -333,7 +358,7 @@ export function progress(village, game, lang = 'de', targets = {}, options = {})
     const owned = {};
     for (const section of listsB) {
       for (const e of village[section] || []) {
-        (owned[e.data] ||= []).push(...Array.from({ length: e.cnt || 1 }, () => ({ lvl: e.lvl || 0, timer: e.timer, sc: e.supercharge || 0 })));
+        (owned[e.data] ||= []).push(...Array.from({ length: e.cnt || 1 }, () => ({ lvl: e.lvl || 0, timer: levelTimer(e), sc: e.supercharge || 0 })));
       }
     }
     for (const [id, allowed] of Object.entries(limits)) {
@@ -354,7 +379,7 @@ export function progress(village, game, lang = 'de', targets = {}, options = {})
     for (const [section, cat, cap] of unitLists) {
       for (const e of village[section] || []) {
         seen.add(e.data);
-        add(e.data, cat, cap, [{ lvl: e.lvl || 0, timer: e.timer }]);
+        add(e.data, cat, cap, [{ lvl: e.lvl || 0, timer: levelTimer(e) }]);
       }
     }
     // Noch nicht freigeschaltete Truppen, Zauber, Helden, Begleiter bis zum Ziel-Rathaus

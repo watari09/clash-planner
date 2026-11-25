@@ -3,8 +3,9 @@
 
 /** Was der Nutzer eintragen kann. `groups`: betroffene Gruppen, `single`: nur ein ausgewähltes Upgrade. */
 export const BOOST_TYPES = {
-  builderPotion: { de: 'Bauarbeitertrank', en: 'Builder Potion', groups: ['home_builders'] },
-  builderBite: { de: 'Bauarbeiterbissen', en: 'Builder Bite', groups: ['home_builders'] },
+  // master: wirkt auch auf den Meisterbauarbeiter, wenn er im Heimatdorf arbeitet
+  builderPotion: { de: 'Bauarbeitertrank', en: 'Builder Potion', groups: ['home_builders'], master: true },
+  builderBite: { de: 'Bauarbeiterbissen', en: 'Builder Bite', groups: ['home_builders'], master: true },
   builderApprentice: { de: 'Bauarbeiterlehrling', en: "Builder's Apprentice", groups: ['home_builders'], single: true, helper: 93000000 },
   researchPotion: { de: 'Forschungstrank', en: 'Research Potion', groups: ['lab'] },
   labLicorice: { de: 'Forschersuppe', en: 'Lab Licorice', groups: ['lab'] },
@@ -77,7 +78,8 @@ export function applyBoosts(running, events, game, village) {
     }
     let saved = 0;
     for (const r of list) {
-      if (!def.groups.includes(r.group)) continue;
+      // Meisterbauarbeiter im Heimatdorf: nur Heimatdorf-Bauarbeiter-Boosts, kein Uhrenturm
+      if (r.master ? !def.master : !def.groups.includes(r.group)) continue;
       if (def.single && r.key !== ev.target) continue;
       const before = r.finishAt;
       r.finishAt = boostedFinish(r.finishAt, start, mult, sec);

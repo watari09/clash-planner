@@ -29,13 +29,13 @@ export function magicItems(village, game, running, now = village.timestamp * 100
 
   for (const r of running) {
     const item = game.items[String(r.id)];
-    if (!item || item.village !== 'home' || r.finishAt <= now) continue;
+    if (!item || item.village !== 'home' || r.finishAt <= now || r.gearUp) continue;
     consider(r.id, item, { to: r.level, seconds: Math.round((r.finishAt - now) / 1000), running: true });
   }
 
   for (const s of SECTIONS) {
     for (const e of village[s] || []) {
-      if (typeof e.timer === 'number') continue; // läuft schon → oben erfasst
+      if (typeof e.timer === 'number') continue; // läuft schon (Stufe oder Gear-Up) → oben erfasst bzw. nicht buchbar
       const item = game.items[String(e.data)];
       if (!item || item.village !== 'home') continue;
       const to = (e.lvl || 0) + 1;
