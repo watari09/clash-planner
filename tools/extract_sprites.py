@@ -24,7 +24,7 @@ OUT = ROOT / "img"
 
 # Name in der Seite → Texturnummer in ui/sc/icons_N.sctx
 ICONS = {
-    "builderPotion": 79, "researchPotion": 77, "clockTowerPotion": 73, "petPotion": 75,
+    "builderPotion": 76, "researchPotion": 77, "clockTowerPotion": 73, "petPotion": 75,
     "clockTower": 54,
     "Gold": 97, "Elixir": 92, "DarkElixir": 94, "Gold2": 91, "Elixir2": 93, "Diamonds": 96,
     "CommonOre": 100, "RareOre": 99, "EpicOre": 101,
