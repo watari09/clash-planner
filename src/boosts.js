@@ -60,17 +60,27 @@ export function applyBoosts(running, events, game, village) {
   const applied = [];
   const exportDayEnd = exportedAt + ((village.helpers || [])[0]?.helper_cooldown || 0) * 1000;
   const sorted = [...events].sort((a, b) => a.at - b.at);
+  // Wird ein Trank aktiviert, während einer derselben Art noch wirkt, verlängert er nur die Dauer:
+  // er beginnt also erst, wenn der vorige endet (Uhrenturm und Uhrenturm-Trank teilen sich das)
+  const family = (type) => (type === 'clockTowerPotion' ? 'clockTower' : type);
+  const windowEnd = {};
   for (const [i, ev] of sorted.entries()) {
     if (ev.at < exportedAt) continue;
     const def = BOOST_TYPES[ev.type];
     if (!def || !game.boosts?.[ev.type]) continue;
     const { mult, sec } = boostEffect(ev.type, game, village);
+    let start = ev.at;
+    if (!def.single) {
+      const f = family(ev.type);
+      start = Math.max(ev.at, windowEnd[f] || 0);
+      windowEnd[f] = start + sec * 1000;
+    }
     let saved = 0;
     for (const r of list) {
       if (!def.groups.includes(r.group)) continue;
       if (def.single && r.key !== ev.target) continue;
       const before = r.finishAt;
-      r.finishAt = boostedFinish(r.finishAt, ev.at, mult, sec);
+      r.finishAt = boostedFinish(r.finishAt, start, mult, sec);
       if (ev.recurrent && def.helper) {
         // fest zugeteilt: ab dem Ende dieses Arbeitstags jeden Tag wieder 1 h
         const day = helperDay(exportedAt, exportDayEnd, sorted.slice(0, i + 1).filter((x) => x.at >= exportedAt));

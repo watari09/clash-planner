@@ -105,3 +105,16 @@ test('Eingetragener Lehrling "fest zuteilen" wirkt auch an den Folgetagen', () =
   assert.equal(f1, warden.finishAt - 3 * H);
   assert.equal(f2, warden.finishAt - 3 * H - 3 * H); // + ein weiterer Arbeitstag nach 23 h (Rest war ~30 h)
 });
+
+test('Zwei Bauarbeitertränke gleichzeitig: verlängern auf 2 h statt doppelt zu zählen', () => {
+  // Upgrade mit 15 h Rest: richtig ist 10-fach für 2 h → fertig nach 1,5 h
+  const run = [{ id: 1, level: 2, group: 'home_builders', finishAt: t0 + 15 * H }];
+  const { running } = applyBoosts(run, [{ type: 'builderPotion', at: t0 }, { type: 'builderPotion', at: t0 }], game, village);
+  assert.equal(running[0].finishAt, t0 + 1.5 * H);
+  // 30 h Rest: 2 h × 9 h gespart
+  const long = [{ id: 1, level: 2, group: 'home_builders', finishAt: t0 + 30 * H }];
+  assert.equal(applyBoosts(long, [{ type: 'builderPotion', at: t0 }, { type: 'builderPotion', at: t0 + 0.5 * H }], game, village).running[0].finishAt, t0 + 12 * H);
+  // nach Ablauf des ersten wieder ein eigener Zeitraum
+  const later = applyBoosts(long, [{ type: 'builderPotion', at: t0 }, { type: 'builderPotion', at: t0 + 5 * H }], game, village).running[0].finishAt;
+  assert.equal(later, t0 + 12 * H);
+});
