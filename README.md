@@ -44,7 +44,7 @@ Die Symbole unter `img/` sind die offiziellen Grafiken aus dem Spiel (© Superce
 
 ```bash
 adb pull <pfad>/split_install_time_asset_pack.apk
-python3 -m venv .research/venv && .research/venv/bin/pip install texture2ddecoder   # ASTC-Decoder
+python3 -m venv .research/venv && .research/venv/bin/pip install texture2ddecoder pillow   # ASTC-Decoder, Bildbearbeitung
 .research/venv/bin/python tools/extract_sprites.py split_install_time_asset_pack.apk
 ```
 

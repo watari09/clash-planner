@@ -321,7 +321,7 @@ function logBoost(type, target, recurrent) {
 const groupClass = (g) => ({ home_builders: 'g-home', lab: 'g-lab', pets: 'g-pets', builder_builders: 'g-bb', star_lab: 'g-star', equipment: 'g-equip' }[g] || '');
 const BOOST_ICON = { builderPotion: '🔨', researchPotion: '⚗', clockTowerPotion: '⏱', petPotion: '🐾', builderBite: '🍪', labLicorice: '🍲', clockTower: '⏱', builderApprentice: '👷', labAssistant: '🧑‍🔬' };
 // Offizielle Symbole aus dem Spiel (tools/extract_sprites.py → img/)
-const IMAGES = new Set(['builderPotion', 'researchPotion', 'clockTowerPotion', 'petPotion', 'clockTower',
+const IMAGES = new Set(['builderPotion', 'researchPotion', 'clockTowerPotion', 'petPotion', 'clockTower', 'builderBite', 'labLicorice',
   'Gold', 'Elixir', 'DarkElixir', 'Gold2', 'Elixir2', 'Diamonds', 'CommonOre', 'RareOre', 'EpicOre',
   'book-fighting', 'book-spells', 'book-heroes', 'book-building', 'builder', 'masterBuilder', 'bob']);
 const icon = (name, cls = 'ico') => (IMAGES.has(name) ? el('img', { src: `img/${name}.webp`, alt: '', class: cls, loading: 'lazy', decoding: 'async' }) : null);
