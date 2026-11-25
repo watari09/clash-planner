@@ -236,3 +236,20 @@ select.inline {
 .inst .planned { color: var(--accent); font-size: .85rem; }
 .add.small-add { width: 28px; height: 28px; font-size: 1rem; }
 .add.ten.on { background: rgba(242, 183, 5, .15); }
+
+/* Heute / Tagesansicht */
+.today { border-color: var(--accent); }
+.items li.ev { flex-wrap: wrap; align-items: flex-start; }
+.ev .grow { display: flex; gap: 10px; justify-content: flex-start; }
+.ev .at { flex: none; width: 3.4em; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+.ev.start .at { color: var(--free); }
+.ev.free .at { color: var(--free); }
+.prep-line { margin: 8px 0 0; color: var(--accent); font-weight: 600; }
+.day .group-head .prep { font-size: .8rem; }
+.picker { width: 100%; margin: 6px 0 2px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; }
+.picker .items li { padding: 6px 0; }
+.items li.with-picker { flex-wrap: wrap; }
+.add.on { background: rgba(242, 183, 5, .15); }
+.items li.ev .grow { justify-content: flex-start; align-items: flex-start; }
+.items li.ev .name { flex: 1; text-align: left; }
+.ev .next, .ev .prep { display: block; }

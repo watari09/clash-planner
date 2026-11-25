@@ -1,5 +1,5 @@
 import { readVillage, analyze, progress, schedule, toIcs, icsCalendar, formatDuration, levelEntry, RESOURCES, GROUPS } from './village.js';
-import { dashboard } from './dashboard.js';
+import { dashboard, dayView } from './dashboard.js';
 import { nextStep, nextEquipStep, gearCandidates, planInstances, simulate, cleanPlan, groupOf } from './planner.js';
 import { BOOST_TYPES, applyBoosts, runningKey, helperDay } from './boosts.js';
 import { magicItems } from './magic.js';
@@ -168,12 +168,15 @@ let showInput = false; // Einfügen-Karte: immer ohne Dorf, sonst nur auf Wunsch
 
 function render() {
   formats();
+  pickerCache = null;
   $('result').hidden = !village;
   $('input').hidden = !!village && !showInput;
   renderSwitcher();
   if (!village || !game) return;
   const r = current();
   const now = Date.now();
+  pickerBusy = new Map();
+  for (const x of r.running) if (!x.gearUp) pickerBusy.set(x.id, [...(pickerBusy.get(x.id) || []), x.finishAt]);
   const age = now - r.exportedAt;
   const ageText = age < 60000 ? t('gerade eben') : t('vor {d}', { d: formatDuration(Math.round(age / 1000)) });
 
@@ -269,7 +272,8 @@ function renderRunning(r, now) {
     );
     const list = el('ul', { class: 'items' }, g.items.map((i) => {
       const left = Math.round((i.finishAt - now) / 1000);
-      return el('li', { class: left <= 0 ? 'done' : '' },
+      const key = `r:${i.id}:${i.finishAt}`;
+      return el('li', { class: `${left <= 0 ? 'done' : ''} with-picker` },
         el('span', { class: 'name' }, i.name,
           el('span', { class: 'lvl' }, i.supercharge ? ` ⚡${i.supercharge}` : i.gearUp ? ` · ${t('Gear-Up')}` : ` → ${i.level}`),
           runningShare(i, now) != null ? el('span', { class: 'bar thin' }, el('span', { style: `width:${runningShare(i, now)}%` })) : null,
@@ -282,6 +286,8 @@ function renderRunning(r, now) {
         el('span', { class: 'time' },
           el('b', {}, left > 0 ? formatDuration(left) : t('fertig ✓')),
           el('span', { class: 'muted' }, when(i.finishAt))),
+        el('span', { class: 'adds' }, planButton(key, i.group)),
+        picker(key, i.group, i.finishAt),
       );
     }));
     if (!g.items.length) list.append(el('li', { class: 'muted' }, t('Nichts in Arbeit')));
@@ -797,56 +803,143 @@ function download(text, name) {
 
 // ---------- Dashboard ----------
 
+let openPicker = null; // Schlüssel der aufgeklappten Plan-Auswahl
+let pickerCache = null; // Fortschritt je Render, für die Auswahl
+let pickerBusy = new Map(); // Objekt-ID → Fertig-Zeiten laufender Upgrades
+
+/**
+ * Kandidaten für einen Platz, der zum Zeitpunkt `at` frei wird: offene Upgrades der passenden Kategorien,
+ * die dann auch startbar sind (nicht alle Exemplare noch im Ausbau), sortiert wie im Fortschritt.
+ */
+function candidatesFor(group, at = Date.now()) {
+  if (!pickerCache) {
+    const list = { sort: 'total', exclude: [], ...readJson(STORE_LIST, {}) };
+    pickerCache = { p: progress(village, game, LANG, readJson(targetKey(), {}), { exclude: list.exclude }), sort: list.sort };
+  }
+  const { p, sort } = pickerCache;
+  const map = {
+    home_builders: ['home', ['buildings', 'traps', 'heroes', 'walls']],
+    lab: ['home', ['lab']],
+    pets: ['home', ['pets']],
+    builder_builders: ['builder', ['buildings', 'traps', 'heroes', 'walls']],
+    star_lab: ['builder', ['lab']],
+  };
+  const [v, cats] = map[group] || [];
+  if (!v || !p[v]) return [];
+  return p[v].categories.filter((c) => cats.includes(c.key)).flatMap((c) => c.items)
+    .filter((i) => i.count && !i.supercharge)
+    // Freischalten (0→1) macht bei Truppen/Zaubern/Begleitern die Kaserne bzw. das Begleiterhaus, nicht das Labor
+    .filter((i) => !(['lab', 'star_lab', 'pets'].includes(group) && i.next?.level === 1))
+    // alle offenen Exemplare stecken zu diesem Zeitpunkt noch im Ausbau (z. B. ein Held) → nicht startbar
+    .filter((i) => i.count > (pickerBusy.get(i.id) || []).filter((f) => f > at + 1000).length)
+    .sort(SORTS[sort]?.fn || SORTS.total.fn);
+}
+
+/** "+"-Knopf, der eine Auswahl passender nächster Upgrades für diesen Platz aufklappt. */
+function planButton(key, group, at) {
+  const open = openPicker === key;
+  return el('button', {
+    class: `add ${open ? 'on' : ''}`, title: t('Nächstes Upgrade für diesen Platz planen'), 'aria-expanded': String(open),
+    onclick: () => { openPicker = open ? null : key; render(); },
+  }, open ? '–' : '+');
+}
+
+function picker(key, group, at) {
+  if (openPicker !== key) return null;
+  const items = candidatesFor(group, at);
+  const shown = items.slice(0, 8);
+  return el('div', { class: 'picker' },
+    el('div', { class: 'muted small' }, t('Was soll danach kommen? (Sortierung wie im Fortschritt)')),
+    shown.length
+      ? el('ul', { class: 'items' }, shown.map((i) => el('li', {},
+        el('span', { class: 'name' }, i.name,
+          i.next ? el('span', { class: 'sub' }, `${i.next.level - 1}→${i.next.level} · ${i.next.seconds ? days(i.next.seconds) : t('sofort')}${i.next.cost ? ` · ${costText({ [i.next.resource]: i.next.cost })}` : ''}`) : null),
+        el('button', { class: 'add small-add', 'aria-label': t('{name} planen', { name: i.name }), onclick: () => { openPicker = null; addToPlan(i); } }, '+'))))
+      : el('p', { class: 'muted small' }, t('Nichts mehr offen.')),
+    el('button', { class: 'ghost small', onclick: () => { openPicker = null; showTab('progress'); } },
+      items.length > shown.length ? t('Alle {n} im Fortschritt', { n: items.length }) : t('Zum Fortschritt')));
+}
+
 function renderDash(r, now) {
   const slots = slotsByGroup(r, now);
   const sim = lastSim || simulate(village, game, getPlan(), r.running, slots, { now, lang: LANG });
-  const d = dashboard(r.running, sim, slots, { now });
+  const d = dashboard(r.running, sim, slots, { now, limit: 200 });
+  const follow = new Map(d.upcoming.map((u) => [`${u.id}:${u.finishAt}`, u.next]));
+  // Starts, die schon als "Danach" bei einer Fertigstellung bzw. einem freien Platz stehen, nicht doppelt zeigen
+  const shownSteps = new Set([...d.upcoming.map((u) => u.next?.index), ...d.free.map((f) => f.next?.index)].filter((x) => x !== undefined));
+  const daysList = dayView(r.running, sim, now, 7);
   const gname = (g) => GROUPS[g]?.[LANG] || g;
   const stepText = (s) => (s.kind === 'gear' ? t('{name} umrüsten', { name: s.name }) : `${s.name} ${s.from}→${s.to}`);
-  const nextLine = (s) => (s
-    ? el('span', { class: 'next' }, t('Danach: {what}', { what: stepText(s) }),
-      Object.keys(s.costs).length ? el('span', { class: 'prep' }, t('bereitlegen: {c}', { c: costText(s.costs) })) : null,
-      s.then ? el('span', { class: 'then' }, t('dann ({t}): {what}', { t: when(s.then.start), what: stepText(s.then) })) : null)
-    : el('span', { class: 'next none' }, t('Danach: nichts geplant')));
+  const clock = (ms) => fmtToday.format(new Date(ms));
 
-  const cards = [];
-  if (d.free.length) {
-    cards.push(el('section', { class: 'card dash-free' },
-      el('h3', {}, t('Jetzt frei')),
-      el('ul', { class: 'items' }, d.free.map((f) => el('li', { class: 'stack' },
-        el('span', { class: 'name' }, el('b', {}, gname(f.group))),
-        f.next
-          ? el('span', { class: 'next' }, t('Jetzt starten: {what}', { what: stepText(f.next) }),
-            Object.keys(f.next.costs).length ? el('span', { class: 'prep' }, costText(f.next.costs)) : null)
-          : el('span', { class: 'next none' }, t('Nichts geplant für diesen Platz')))))));
+  // Eine Zeile "X wird fertig" – mit dem, was danach kommt, und einem + für weitere Planung
+  const finishRow = (e) => {
+    const u = e.item;
+    const next = follow.get(`${u.id}:${u.finishAt}`);
+    const key = `f:${u.id}:${u.finishAt}`;
+    return el('li', { class: `ev ${u.group.startsWith('builder') || u.group === 'star_lab' ? 'bb' : 'home'}` },
+      el('span', { class: 'grow' },
+        el('span', { class: 'at' }, clock(e.at)),
+        el('span', { class: 'name' }, t('{name} fertig', { name: `${u.name}${u.gearUp ? ` (${t('Gear-Up')})` : u.supercharge ? ` ⚡${u.supercharge}` : ` → ${u.level}`}` }),
+          el('span', { class: 'sub' }, gname(u.group)),
+          next
+            ? el('span', { class: 'next' }, t('Danach: {what}', { what: stepText(next) }),
+              Object.keys(next.costs).length ? el('span', { class: 'prep' }, t('bereitlegen: {c}', { c: costText(next.costs) })) : null)
+            : el('span', { class: 'next none' }, t('Danach: nichts geplant')))),
+      el('span', { class: 'adds' }, planButton(key, u.group)),
+      picker(key, u.group, u.finishAt));
+  };
+  const startRow = (e) => el('li', { class: 'ev start' },
+    el('span', { class: 'grow' },
+      el('span', { class: 'at' }, e.at <= now + 60e3 ? t('jetzt') : clock(e.at)),
+      el('span', { class: 'name' }, t('Starten: {what}', { what: stepText(e.step) }),
+        el('span', { class: 'sub' }, gname(e.step.group)),
+        Object.keys(e.step.costs).length ? el('span', { class: 'prep' }, costText(e.step.costs)) : null)));
+  const rows = (entries) => entries
+    .filter((e) => e.type === 'finish' || !shownSteps.has(e.step.index))
+    .map((e) => (e.type === 'finish' ? finishRow(e) : startRow(e)));
+
+  // ----- Heute zu tun -----
+  const todayBucket = daysList.find((b) => b.today) || { entries: [], prepare: {} };
+  const todo = [];
+  for (const [k, f] of d.free.entries()) {
+    const key = `free:${f.group}:${k}`;
+    todo.push(el('li', { class: 'ev free' },
+      el('span', { class: 'grow' },
+        el('span', { class: 'at' }, t('jetzt')),
+        el('span', { class: 'name' }, t('{g}: Platz frei', { g: gname(f.group) }),
+          f.next ? el('span', { class: 'next' }, t('Jetzt starten: {what}', { what: stepText(f.next) })) : el('span', { class: 'next none' }, t('Nichts geplant für diesen Platz')))),
+      el('span', { class: 'adds' }, planButton(key, f.group)),
+      picker(key, f.group, now)));
   }
-  cards.push(el('section', { class: 'card' },
-    el('h3', {}, t('Als Nächstes fertig')),
-    d.upcoming.length
-      ? el('ul', { class: 'items' }, d.upcoming.map((u) => el('li', { class: `stack ${u.group.startsWith('builder') || u.group === 'star_lab' ? 'bb' : 'home'}` },
-        el('span', { class: 'row-line' },
-          el('span', { class: 'name' }, u.name, el('span', { class: 'lvl' }, u.supercharge ? ` ⚡${u.supercharge}` : u.gearUp ? ` · ${t('Gear-Up')}` : ` → ${u.level}`)),
-          el('span', { class: 'time' }, el('b', {}, formatDuration(Math.round((u.finishAt - now) / 1000))), el('span', { class: 'muted' }, when(u.finishAt)))),
-        el('span', { class: 'sub' }, gname(u.group)),
-        nextLine(u.next))))
-      : el('p', { class: 'muted' }, t('Gerade läuft nichts.'))));
+  const readyNow = r.helpers.filter((h) => (h.id === 93000000 || h.id === 93000001) && h.readyAt <= now).map((h) => h.name);
+  if (r.clockTowerReadyAt && r.clockTowerReadyAt <= now) readyNow.push(t('Uhrenturm'));
+  if (readyNow.length) todo.push(el('li', { class: 'ev free' }, el('span', { class: 'grow' }, el('span', { class: 'at' }, t('jetzt')), el('span', { class: 'name' }, t('Bereit: ') + readyNow.join(', ')))));
+  // geplante Starts "jetzt" sind schon bei den freien Plätzen erwähnt
+  todo.push(...rows(todayBucket.entries.filter((e) => !(e.type === 'start' && e.at <= now + 60e3))));
+
+  const cards = [el('section', { class: 'card today' },
+    el('div', { class: 'group-head' }, el('h3', {}, t('Heute zu tun')), el('span', { class: 'muted small' }, new Intl.DateTimeFormat(locale(), { weekday: 'long', day: '2-digit', month: '2-digit' }).format(new Date(now)))),
+    todo.length ? el('ul', { class: 'items' }, todo) : el('p', { class: 'muted' }, t('Heute steht nichts an.')),
+    Object.keys(todayBucket.prepare).length ? el('p', { class: 'prep-line' }, t('Heute bereitlegen: {c}', { c: costText(todayBucket.prepare) })) : null)];
+
   if (!d.planned) {
     cards.push(el('section', { class: 'card hint-card' },
       el('h3', {}, t('Noch kein Plan')),
-      el('p', { class: 'muted small' }, t('Im Reiter „Fortschritt“ Upgrades mit + vormerken – dann steht hier zu jedem frei werdenden Platz, was danach startet und was du bereitlegen musst.')),
-      el('button', { class: 'ghost small', onclick: () => showTab('progress') }, t('Zum Fortschritt'))));
-  } else {
-    cards.push(el('section', { class: 'card' },
-      el('h3', {}, t('In den nächsten 24 h bereitlegen')),
-      d.soonCount
-        ? el('p', {}, el('b', {}, costText(d.prepare)), el('span', { class: 'muted small' }, ` · ${t('{n} geplante Starts', { n: d.soonCount })}`))
-        : el('p', { class: 'muted small' }, t('In den nächsten 24 h startet nichts aus deinem Plan.'))));
+      el('p', { class: 'muted small' }, t('Tippe bei einem Upgrade auf + und wähle, was danach kommen soll – dann steht hier zu jedem Tag, was du starten und bereitlegen musst.'))));
   }
-  // Helfer und Uhrenturm kurz
-  const readyNow = r.helpers.filter((h) => (h.id === 93000000 || h.id === 93000001) && h.readyAt <= now).map((h) => h.name);
-  if (r.clockTowerReadyAt && r.clockTowerReadyAt <= now) readyNow.push(t('Uhrenturm'));
-  if (readyNow.length) cards.push(el('section', { class: 'card dash-free' }, el('p', {}, el('b', {}, t('Bereit: ')), readyNow.join(', '))));
-  $('dash').replaceChildren(...cards);
+
+  // ----- Nächste Tage -----
+  for (const b of daysList.filter((x) => !x.today)) {
+    const date = new Date(b.day);
+    const tomorrow = b.day - new Date(now).setHours(0, 0, 0, 0) === 86400e3;
+    cards.push(el('section', { class: 'card day' },
+      el('div', { class: 'group-head' },
+        el('h3', {}, tomorrow ? t('Morgen') : new Intl.DateTimeFormat(locale(), { weekday: 'long', day: '2-digit', month: '2-digit' }).format(date)),
+        Object.keys(b.prepare).length ? el('span', { class: 'prep' }, costText(b.prepare)) : null),
+      el('ul', { class: 'items' }, rows(b.entries))));
+  }
+  $('dash').replaceChildren(...cards.filter(Boolean));
 }
 
 // ---------- Magische Gegenstände ----------

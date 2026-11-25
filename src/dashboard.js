@@ -40,3 +40,26 @@ export function dashboard(running, sim, slots, options = {}) {
 
   return { free, upcoming, prepare, soonCount: soon.length, planned: steps.length > 0 };
 }
+
+/**
+ * Tagesansicht: Ereignisse (laufende Upgrades fertig, geplante Starts) nach Kalendertag gruppiert.
+ * @returns [{ day: Date (Tagesbeginn), today: bool, entries: [{ type: 'finish'|'start', at, item?, step? }], prepare }]
+ */
+export function dayView(running, sim, now = Date.now(), days = 7) {
+  const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
+  const today = startOfDay(now);
+  const until = today + days * 86400e3;
+  const entries = [
+    ...running.filter((r) => r.finishAt > now && r.finishAt < until).map((r) => ({ type: 'finish', at: r.finishAt, item: r })),
+    ...(sim?.steps || []).filter((s) => s.kind !== 'equip' && s.start < until && s.start >= now - 60e3).map((s) => ({ type: 'start', at: Math.max(s.start, now), step: s })),
+  ].sort((a, b) => a.at - b.at || (a.type === 'finish' ? -1 : 1));
+  const out = [];
+  for (const e of entries) {
+    const day = startOfDay(e.at);
+    let bucket = out.find((b) => b.day === day);
+    if (!bucket) { bucket = { day, today: day === today, entries: [], prepare: {} }; out.push(bucket); }
+    bucket.entries.push(e);
+    if (e.type === 'start') for (const [r, n] of Object.entries(e.step.costs || {})) bucket.prepare[r] = (bucket.prepare[r] || 0) + n;
+  }
+  return out;
+}
