@@ -24,7 +24,7 @@ OUT = ROOT / "img"
 
 # Name in der Seite → Texturnummer in ui/sc/icons_N.sctx
 ICONS = {
-    "builderPotion": 76, "researchPotion": 77, "clockTowerPotion": 73, "petPotion": 75,
+    "builderPotion": 72, "researchPotion": 77, "clockTowerPotion": 73, "petPotion": 75,
     "clockTower": 54,
     "Gold": 97, "Elixir": 92, "DarkElixir": 94, "Gold2": 91, "Elixir2": 93, "Diamonds": 96,
     "CommonOre": 100, "RareOre": 99, "EpicOre": 101,
@@ -32,6 +32,8 @@ ICONS = {
     "builder": 8, "masterBuilder": 10, "bob": 11,
 }
 SIZE = 64
+# manche Symbole liegen im Atlas gedreht (Grad, im Uhrzeigersinn)
+ROTATE = {"builderPotion": -90}
 
 
 def index(apk):
@@ -66,7 +68,8 @@ def main(path):
                  "-define", f"connected-components:keep-top={keep}",
                  "-define", "connected-components:mean-color=true", "-connected-components", "8", ")",
                  "-compose", "CopyOpacity", "-composite"] if keep else []
-        subprocess.run(["magick", "-size", f"{w}x{h}", "-depth", "8", "bgra:-", *clean,
+        subprocess.run(["magick", "-size", f"{w}x{h}", "-depth", "8", "bgra:-",
+                        *(["-rotate", str(ROTATE[name])] if name in ROTATE else []), *clean,
                         "-trim", "+repage", "-resize", f"{SIZE}x{SIZE}>", "-strip", "-quality", "85",
                         f"webp:{OUT / name}.webp"],
                        input=bgra, check=True)
