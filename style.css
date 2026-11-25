@@ -341,3 +341,21 @@ h1 { background: linear-gradient(90deg, #ffd25a, #ff9f6b 55%, #e86bd8); -webkit-
 
 /* Tages-Karussell: Tag farbig */
 .card.day .group-head h3 { color: #ffd25a; }
+.quick-btn.off { opacity: .45; }
+.q-clockTower { --qc: var(--c-star); }
+.quick-btn.off { opacity: .45; }
+.q-clockTower { --qc: var(--c-star); }
+
+/* Offizielle Symbole */
+.ico, .res-ico, .head-ico, .btn-ico { object-fit: contain; flex: none; }
+.res.has-ico::before { display: none; }
+.res-ico { width: 1.15em; height: 1.15em; margin-right: .22em; vertical-align: -.22em; }
+.head-ico { width: 1.5em; height: 1.5em; margin-right: .4em; vertical-align: -.4em; }
+.btn-ico { width: 1.3em; height: 1.3em; margin-right: .35em; vertical-align: -.3em; }
+.q-icon { display: flex; align-items: center; justify-content: center; height: 2.6rem; }
+.q-img { width: 2.4rem; height: 2.4rem; object-fit: contain; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
+.boost-btn { display: inline-flex; align-items: center; }
+.facts dt .res-ico { width: 1.3em; height: 1.3em; }
+.quick-row { grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); }
+.quick-btn .q-name { font-size: .74rem; line-height: 1.15; }
+.quick-btn { padding: 8px 4px; }

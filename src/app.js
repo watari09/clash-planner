@@ -255,7 +255,7 @@ function renderRunning(r, now) {
     const slots = Math.max(overrides[g.key] ?? g.slots, active.length);
     const free = Math.max(0, slots - active.length);
     const head = el('div', { class: 'group-head' },
-      el('h3', {}, g.title),
+      el('h3', {}, GROUP_ICON[g.key] ? icon(GROUP_ICON[g.key], 'head-ico') : null, g.title),
       el('button', {
         class: `slots ${free ? 'free' : ''}`,
         title: t('Anzahl der Plätze ändern'),
@@ -320,14 +320,21 @@ function logBoost(type, target, recurrent) {
 // Farbe je Gruppe (CSS-Klasse) und kleine Symbole für Boosts
 const groupClass = (g) => ({ home_builders: 'g-home', lab: 'g-lab', pets: 'g-pets', builder_builders: 'g-bb', star_lab: 'g-star', equipment: 'g-equip' }[g] || '');
 const BOOST_ICON = { builderPotion: '🔨', researchPotion: '⚗', clockTowerPotion: '⏱', petPotion: '🐾', builderBite: '🍪', labLicorice: '🍲', clockTower: '⏱', builderApprentice: '👷', labAssistant: '🧑‍🔬' };
+// Offizielle Symbole aus dem Spiel (tools/extract_sprites.py → img/)
+const IMAGES = new Set(['builderPotion', 'researchPotion', 'clockTowerPotion', 'petPotion', 'clockTower',
+  'Gold', 'Elixir', 'DarkElixir', 'Gold2', 'Elixir2', 'Diamonds', 'CommonOre', 'RareOre', 'EpicOre',
+  'book-fighting', 'book-spells', 'book-heroes', 'book-building', 'builder', 'masterBuilder', 'bob']);
+const icon = (name, cls = 'ico') => (IMAGES.has(name) ? el('img', { src: `img/${name}.webp`, alt: '', class: cls, loading: 'lazy', decoding: 'async' }) : null);
+const boostIcon = (type) => icon(type, 'q-img') || BOOST_ICON[type];
+const GROUP_ICON = { home_builders: 'builder', builder_builders: 'masterBuilder' };
 
 /** Kosten mit farbigem Ressourcen-Punkt je Ressource (statt nur Text). */
 function costEl(cost, factor = 1) {
   const parts = Object.entries(cost || {}).filter(([, n]) => n > 0);
   if (!parts.length) return el('span', { class: 'muted' }, '–');
   return el('span', { class: 'costs' }, parts.map(([r, n]) => el('span', {
-    class: `res res-${r}`, title: (RESOURCES[r] || ORES[r])?.[LANG] || r,
-  }, fmtAmount.format(Math.round(n * factor)))));
+    class: `res res-${r} ${IMAGES.has(r) ? 'has-ico' : ''}`, title: (RESOURCES[r] || ORES[r])?.[LANG] || r,
+  }, icon(r, 'res-ico'), fmtAmount.format(Math.round(n * factor)))));
 }
 
 function renderExtras(r, now) {
@@ -353,7 +360,7 @@ function renderExtras(r, now) {
     return at > now ? { disabled: true, title: t('bereit {t}', { t: when(at) }) } : {};
   };
   const buttons = available.filter(([, d]) => !d.single).map(([type, d]) =>
-    el('button', { class: 'ghost small', onclick: () => add(type), ...lock(type, d) }, d[LANG] || d.de));
+    el('button', { class: 'ghost small boost-btn', onclick: () => add(type), ...lock(type, d) }, icon(type, 'btn-ico'), d[LANG] || d.de));
   const singles = available.filter(([, d]) => d.single).map(([type, d]) => {
     const options = r.running.filter((x) => d.groups.includes(x.group) && x.finishAt > now);
     if (!options.length) return null;
@@ -930,8 +937,19 @@ function renderDash(r, now) {
       picker(key, f.group, now)));
   }
   const readyNow = r.helpers.filter((h) => (h.id === 93000000 || h.id === 93000001) && h.readyAt <= now).map((h) => h.name);
-  if (r.clockTowerReadyAt && r.clockTowerReadyAt <= now) readyNow.push(t('Uhrenturm'));
   if (readyNow.length) todo.push(el('li', { class: 'ev free' }, el('span', { class: 'grow' }, el('span', { class: 'at' }, t('jetzt')), el('span', { class: 'name' }, t('Bereit: ') + readyNow.join(', ')))));
+  // Uhrenturm: bereit (mit Knopf) oder heute wieder bereit – ausblendbar über "Anpassen" in der Trank-Leiste
+  const tower = r.clockTowerReadyAt;
+  const endOfToday = new Date(now).setHours(24, 0, 0, 0);
+  if (tower && !quickHidden().includes('clockTower') && tower < endOfToday) {
+    const ready = tower <= now;
+    todo.push(el('li', { class: 'ev g-bb' },
+      el('span', { class: 'grow' },
+        el('span', { class: 'at' }, ready ? t('jetzt') : clock(tower)),
+        el('span', { class: 'name' }, icon('clockTower', 'head-ico'), ready ? t('Uhrenturm bereit') : t('Uhrenturm wieder bereit'),
+          el('span', { class: 'sub' }, t('Boost für das Nachtdorf – nach dem Benutzen hier eintragen')))),
+      ready ? el('span', { class: 'adds' }, el('button', { class: 'ghost small', onclick: () => logBoost('clockTower') }, t('Benutzt'))) : null));
+  }
   // geplante Starts "jetzt" sind schon bei den freien Plätzen erwähnt
   todo.push(...rows(todayBucket.entries.filter((e) => !(e.type === 'start' && e.at <= now + 60e3))));
 
@@ -983,20 +1001,48 @@ function renderDash(r, now) {
 }
 
 /** Schnell-Leiste: die häufigsten Tränke mit einem Tipp eintragen; zeigt, ob gerade einer wirkt. */
+const STORE_QUICK = 'planner.quickHidden'; // ausgeblendete Knöpfe der Trank-Leiste
+const quickHidden = () => readJson(STORE_QUICK, []);
+let quickEdit = false;
+
+/** Schnell-Leiste: Tränke und Uhrenturm mit einem Tipp eintragen; Knöpfe über "Anpassen" ein-/ausblendbar. */
 function quickBoosts(r, now) {
   const slots = slotsByGroup(r, now);
-  const types = ['builderPotion', 'researchPotion', ...((slots.builder_builders || slots.star_lab) ? ['clockTowerPotion'] : [])];
+  const bb = !!(slots.builder_builders || slots.star_lab);
+  const all = ['builderPotion', 'researchPotion', ...(bb ? ['clockTowerPotion', 'clockTower'] : [])];
+  const hidden = quickHidden();
+  const types = quickEdit ? all : all.filter((x) => !hidden.includes(x));
+  const toggle = (type) => {
+    const h = quickHidden();
+    localStorage.setItem(STORE_QUICK, JSON.stringify(h.includes(type) ? h.filter((x) => x !== type) : [...h, type]));
+    render();
+  };
+  const towerFamily = (x) => x === 'clockTower' || x === 'clockTowerPotion';
   return el('section', { class: 'card quick' },
-    el('h3', {}, t('Trank benutzt?')),
+    el('div', { class: 'group-head' },
+      el('h3', {}, t('Tränke & Uhrenturm')),
+      el('button', { class: 'ghost small', onclick: () => { quickEdit = !quickEdit; render(); } }, quickEdit ? t('Fertig') : t('Anpassen'))),
     el('div', { class: 'quick-row' }, types.map((type) => {
-      const active = (r.boosts || []).filter((b) => (b.type === type || (type === 'clockTowerPotion' && b.type === 'clockTower')) && b.end > now)
+      const active = (r.boosts || []).filter((b) => (b.type === type || (towerFamily(type) && towerFamily(b.type))) && b.end > now)
         .reduce((m, b) => Math.max(m, b.end), 0);
-      return el('button', { class: `quick-btn q-${type} ${active ? 'active' : ''}`, onclick: () => logBoost(type) },
-        el('span', { class: 'q-icon', 'aria-hidden': 'true' }, BOOST_ICON[type]),
-        el('span', { class: 'q-name' }, BOOST_TYPES[type][LANG] || BOOST_TYPES[type].de),
-        el('span', { class: 'q-state' }, active ? t('aktiv bis {t}', { t: fmtToday.format(new Date(active)) }) : t('jetzt eintragen')));
+      // Uhrenturm: kostenlos, aber mit Abklingzeit
+      const cooling = type === 'clockTower' && r.clockTowerReadyAt > now;
+      const iconEl = el('span', { class: 'q-icon', 'aria-hidden': 'true' }, boostIcon(type));
+      const name = el('span', { class: 'q-name' }, BOOST_TYPES[type][LANG] || BOOST_TYPES[type].de);
+      if (quickEdit) {
+        const off = hidden.includes(type);
+        return el('button', { class: `quick-btn q-${type} ${off ? 'off' : 'active'}`, onclick: () => toggle(type) },
+          iconEl, name, el('span', { class: 'q-state' }, off ? t('ausgeblendet') : t('sichtbar')));
+      }
+      return el('button', { class: `quick-btn q-${type} ${active ? 'active' : ''}`, onclick: () => logBoost(type), disabled: cooling && !active },
+        iconEl, name,
+        el('span', { class: 'q-state' }, active
+          ? t('aktiv bis {t}', { t: fmtToday.format(new Date(active)) })
+          : cooling ? t('bereit {t}', { t: when(r.clockTowerReadyAt) }) : t('jetzt eintragen')));
     })),
-    el('p', { class: 'muted small' }, t('Mehrfach tippen = mehrere Tränke (verlängert die Dauer). Rückgängig unter „Laufend“ → Helfer & Boosts.')));
+    el('p', { class: 'muted small' }, quickEdit
+      ? t('Tippe auf einen Knopf, um ihn ein- oder auszublenden. Der Uhrenturm verschwindet dann auch aus „Heute zu tun“.')
+      : t('Mehrfach tippen = mehrere Tränke (verlängert die Dauer). Rückgängig unter „Laufend“ → Helfer & Boosts.')));
 }
 
 // ---------- Magische Gegenstände ----------
@@ -1007,8 +1053,8 @@ function renderMagic(r, now) {
     el('section', { class: 'card' },
       el('h3', {}, t('Wo lohnt sich ein Buch?')),
       el('p', { class: 'muted small' }, t('Ein Buch beendet ein Upgrade sofort – am meisten bringt es beim längsten. Berücksichtigt wird, was du jetzt starten kannst (Rathaus- bzw. Labor-Stufe); ⏳ = läuft schon, gezählt wird die Restzeit.'))),
-    ...Object.values(m).map((book) => el('section', { class: 'card group' },
-      el('h3', {}, book.title),
+    ...Object.entries(m).map(([key, book]) => el('section', { class: 'card group' },
+      el('h3', {}, icon(`book-${key}`, 'head-ico'), book.title),
       book.items.length
         ? el('ol', { class: 'items ranking' }, book.items.map((i) => el('li', {},
           el('span', { class: 'name' }, i.name, el('span', { class: 'lvl' }, ` → ${i.to}`)),
@@ -1022,10 +1068,6 @@ function renderMagic(r, now) {
 const STORE_ORE = 'planner.ore'; // { useBlacksmith: bool }
 const RARITY = { common: 'gewöhnlich', epic: 'episch', legendary: 'legendär' }; // über t() übersetzt
 
-function oreText(ore) {
-  const parts = Object.keys(ORES).filter((k) => ore[k]).map((k) => `${fmtInt.format(ore[k])} ${ORES[k][LANG]}`);
-  return parts.join(' · ') || t('fertig ✓');
-}
 
 function renderOre() {
   const opts = { useBlacksmith: false, ...readJson(STORE_ORE, {}) };
@@ -1037,15 +1079,15 @@ function renderOre() {
       el('label', { class: 'check' },
         el('input', { type: 'checkbox', checked: opts.useBlacksmith, onchange: (e) => { localStorage.setItem(STORE_ORE, JSON.stringify({ useBlacksmith: e.target.checked })); render(); } }),
         t(' Nur bis zur aktuellen Schmied-Stufe ({n})', { n: s.blacksmith })),
-      el('dl', { class: 'facts' }, Object.keys(ORES).flatMap((k) => [el('dt', {}, ORES[k][LANG]), el('dd', {}, el('b', {}, fmtInt.format(s.total[k] || 0)))]))),
+      el('dl', { class: 'facts' }, Object.keys(ORES).flatMap((k) => [el('dt', {}, icon(k, 'res-ico'), ORES[k][LANG]), el('dd', {}, el('b', {}, fmtInt.format(s.total[k] || 0)))]))),
     ...s.heroes.map((h) => el('section', { class: 'card group' },
       el('div', { class: 'group-head' }, el('h3', {}, h.name), el('span', { class: 'muted small' }, t('{a}/{b} besessen', { a: h.owned, b: h.items.length }))),
-      el('p', { class: 'small' }, oreText(h.ore)),
+      el('p', { class: 'small' }, Object.keys(h.ore).length ? costEl(h.ore) : t('fertig ✓')),
       el('ul', { class: 'items' }, h.items.map((i) => el('li', { class: i.owned ? '' : 'done-item' },
         el('span', { class: 'grow' },
           el('span', { class: 'name' }, i.name, el('span', { class: 'sub' },
             (RARITY[i.rarity] ? t(RARITY[i.rarity]) : i.rarity) + (i.owned ? t(' · Stufe {a} → {b}', { a: i.level, b: i.to }) : t(' · nicht freigeschaltet')))),
-          el('span', { class: 'time small' }, i.owned ? oreText(i.ore) : '–')),
+          el('span', { class: 'time small' }, i.owned ? (Object.keys(i.ore).length ? costEl(i.ore) : t('fertig ✓')) : '–')),
         i.owned && i.level < i.to ? el('span', { class: 'adds' },
           el('button', { class: 'add', title: t('Nächste Stufe planen'), 'aria-label': t('{name} planen', { name: i.name }), onclick: () => addEquipToPlan(i) }, '+')) : null))))),
   );

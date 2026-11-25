@@ -19,6 +19,7 @@ Webseite: Dorf-Export aus Clash of Clans einfügen →
 - Supercharges (ab Rathaus 17/18) im Fortschritt; Gear-Ups und Ausrüstung im Plan
 - Helfer an laufenden Upgrades (`helper_timer`) und Goblin-Bauarbeiter (`extra`) aus dem Export berücksichtigt
 - Als App auf den Home-Bildschirm (Manifest + Hinweis)
+- Offizielle Spiel-Symbole für Tränke, Ressourcen, Erze, Bücher und Bauarbeiter (aus den Spieldateien)
 - Deutsch und Englisch (Spielnamen aus den Spieldaten, Oberfläche über `src/i18n.js`)
 
  Läuft komplett im Browser, keine Anmeldung, keine Daten auf einem Server.
@@ -36,6 +37,16 @@ npm test                         # Node ≥ 20, keine Abhängigkeiten
 - `src/planner.js` – Upgrade-Plan: Verteilung auf Bauarbeiter/Labore, Ressourcen-Zeitplan (ohne DOM, getestet)
 - `src/app.js` – Oberfläche
 - `data/game.json` – Namen, Stufen und Bauzeiten aller Spielobjekte
+
+## Symbole aktualisieren
+
+Die Symbole unter `img/` sind die offiziellen Grafiken aus dem Spiel (© Supercell, Nutzung gemäß Fan-Content-Richtlinie). Sie werden aus der APK gelesen:
+
+```bash
+adb pull <pfad>/split_install_time_asset_pack.apk
+python3 -m venv .research/venv && .research/venv/bin/pip install texture2ddecoder   # ASTC-Decoder
+.research/venv/bin/python tools/extract_sprites.py split_install_time_asset_pack.apk
+```
 
 ## Spieldaten aktualisieren
 

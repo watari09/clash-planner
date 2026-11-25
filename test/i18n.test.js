@@ -12,7 +12,7 @@ const placeholders = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort(
 // Texte aus t('…'), t(label) für Filter/Sortierung/Seltenheit/Blockaden, data-i18n im HTML
 const keys = new Set([
   ...[...app.matchAll(/\bt\('((?:[^'\\]|\\.)*)'/g)].map((m) => m[1].replace(/\\'/g, "'")),
-  ...[...app.matchAll(/\['\w+', '([^']+)'\]/g)].map((m) => m[1]), // FILTERS
+  ...[...(app.match(/const FILTERS = \[([\s\S]*?)\];/)?.[1] || '').matchAll(/\['\w+', '([^']+)'\]/g)].map((m) => m[1]), // FILTERS
   ...[...app.matchAll(/\{ de: '([^']+)', fn:/g)].map((m) => m[1]), // SORTS
   ...[...app.matchAll(/(?:common|epic|legendary): '([^']+)'/g)].map((m) => m[1]), // RARITY
   ...[...app.matchAll(/\{ hall: '([^']+)', lab: '([^']+)', gear: '([^']+)' \}/g)].flatMap((m) => m.slice(1)), // B.O.B.-Blockaden
