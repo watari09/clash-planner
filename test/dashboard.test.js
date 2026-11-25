@@ -51,12 +51,23 @@ test('Tagesansicht: Fertigstellungen und geplante Starts nach Tag, Bedarf je Tag
   assert.equal(new Date(days[0].entries[0].at).getHours(), new Date(now + 29280e3).getHours());
   const all = days.flatMap((d) => d.entries);
   // jedes laufende Upgrade der nächsten 7 Tage taucht genau einmal als "finish" auf
-  assert.equal(all.filter((e) => e.type === 'finish').length, r.running.filter((x) => x.finishAt < days.at(-1).day + 86400e3).length);
-  const start = all.find((e) => e.type === 'start');
-  assert.equal(start.step.id, 1000008);
-  const bucket = days.find((d) => d.entries.includes(start));
+  assert.equal(all.filter((e) => e.type === 'finish' && !e.planned).length, r.running.filter((x) => x.finishAt < days.at(-1).day + 86400e3).length);
+  // der geplante Start hängt als "next" an der Fertigstellung des X-Bogens, nicht als eigene Zeile
+  const fin = all.find((e) => e.type === 'finish' && e.next?.id === 1000008);
+  assert.equal(fin.item.id, 1000021);
+  assert.ok(!all.some((e) => e.type === 'start'));
+  const bucket = days.find((d) => d.entries.includes(fin));
   assert.equal(bucket.prepare.Gold, game.items['1000008'].levels[9][2]);
-  // innerhalb eines Tages zeitlich sortiert, "fertig" vor "starten" zur selben Zeit
-  const i = bucket.entries.indexOf(start);
-  assert.equal(bucket.entries[i - 1].type, 'finish');
+});
+
+test('Kette auf einem Platz: geplantes Upgrade wird fertig, danach startet das nächste', () => {
+  // zwei kurze Kanonen-Stufen hintereinander auf dem ersten frei werdenden Bauarbeiter
+  const p1 = nextStep(village, [], 1000008, 19);
+  const p2 = nextStep(village, [p1], 1000008, 19);
+  const sim = simulate(village, game, [p1, p2], r.running, slots, { now });
+  const all = dayView(r.running, sim, now, 7).flatMap((d) => d.entries);
+  const xbow = all.find((e) => e.type === 'finish' && e.next?.index === 0);
+  const plannedFinish = all.find((e) => e.type === 'finish' && e.item.fromStep === 0);
+  assert.equal(plannedFinish.next?.index, 1); // nach der ersten Kanone direkt die zweite
+  assert.ok(plannedFinish.at > xbow.at);
 });

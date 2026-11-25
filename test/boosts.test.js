@@ -118,3 +118,9 @@ test('Zwei Bauarbeitertränke gleichzeitig: verlängern auf 2 h statt doppelt zu
   const later = applyBoosts(long, [{ type: 'builderPotion', at: t0 }, { type: 'builderPotion', at: t0 + 5 * H }], game, village).running[0].finishAt;
   assert.equal(later, t0 + 12 * H);
 });
+
+test('Forschungstrank: zwei gleichzeitig = 24-fach für 2 h, nicht doppelt gezählt', () => {
+  const run = [{ id: 1, level: 2, group: 'lab', finishAt: t0 + 30 * H }];
+  const { running } = applyBoosts(run, [{ type: 'researchPotion', at: t0 }, { type: 'researchPotion', at: t0 }], game, village);
+  assert.equal(running[0].finishAt, t0 + 1.25 * H); // 30 h Arbeit / 24 = 1,25 h < 2 h Boost
+});

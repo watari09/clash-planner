@@ -804,6 +804,7 @@ function download(text, name) {
 // ---------- Dashboard ----------
 
 let openPicker = null; // Schlüssel der aufgeklappten Plan-Auswahl
+let dayIndex = 0; // angezeigter Tag im Karussell
 let pickerCache = null; // Fortschritt je Render, für die Auswahl
 let pickerBusy = new Map(); // Objekt-ID → Fertig-Zeiten laufender Upgrades
 
@@ -875,13 +876,13 @@ function renderDash(r, now) {
   // Eine Zeile "X wird fertig" – mit dem, was danach kommt, und einem + für weitere Planung
   const finishRow = (e) => {
     const u = e.item;
-    const next = follow.get(`${u.id}:${u.finishAt}`);
+    const next = e.next ?? follow.get(`${u.id}:${u.finishAt}`);
     const key = `f:${u.id}:${u.finishAt}`;
     return el('li', { class: `ev ${u.group.startsWith('builder') || u.group === 'star_lab' ? 'bb' : 'home'}` },
       el('span', { class: 'grow' },
         el('span', { class: 'at' }, clock(e.at)),
         el('span', { class: 'name' }, t('{name} fertig', { name: `${u.name}${u.gearUp ? ` (${t('Gear-Up')})` : u.supercharge ? ` ⚡${u.supercharge}` : ` → ${u.level}`}` }),
-          el('span', { class: 'sub' }, gname(u.group)),
+          el('span', { class: 'sub' }, gname(u.group), e.planned ? el('span', { class: 'tag' }, t('geplant')) : null),
           next
             ? el('span', { class: 'next' }, t('Danach: {what}', { what: stepText(next) }),
               Object.keys(next.costs).length ? el('span', { class: 'prep' }, t('bereitlegen: {c}', { c: costText(next.costs) })) : null)
@@ -929,15 +930,37 @@ function renderDash(r, now) {
       el('p', { class: 'muted small' }, t('Tippe bei einem Upgrade auf + und wähle, was danach kommen soll – dann steht hier zu jedem Tag, was du starten und bereitlegen musst.'))));
   }
 
-  // ----- Nächste Tage -----
-  for (const b of daysList.filter((x) => !x.today)) {
-    const date = new Date(b.day);
-    const tomorrow = b.day - new Date(now).setHours(0, 0, 0, 0) === 86400e3;
-    cards.push(el('section', { class: 'card day' },
-      el('div', { class: 'group-head' },
-        el('h3', {}, tomorrow ? t('Morgen') : new Intl.DateTimeFormat(locale(), { weekday: 'long', day: '2-digit', month: '2-digit' }).format(date)),
-        Object.keys(b.prepare).length ? el('span', { class: 'prep' }, costText(b.prepare)) : null),
-      el('ul', { class: 'items' }, rows(b.entries))));
+  // ----- Nächste Tage als Karussell (wischen oder Pfeile) -----
+  const future = daysList.filter((x) => !x.today);
+  if (future.length) {
+    const slides = future.map((b) => {
+      const date = new Date(b.day);
+      const tomorrow = b.day - new Date(now).setHours(0, 0, 0, 0) === 86400e3;
+      return el('section', { class: 'card day slide' },
+        el('div', { class: 'group-head' },
+          el('h3', {}, tomorrow ? t('Morgen') : new Intl.DateTimeFormat(locale(), { weekday: 'long', day: '2-digit', month: '2-digit' }).format(date)),
+          Object.keys(b.prepare).length ? el('span', { class: 'prep' }, costText(b.prepare)) : null),
+        el('ul', { class: 'items' }, rows(b.entries)));
+    });
+    const track = el('div', { class: 'carousel', tabindex: '0', 'aria-label': t('Nächste Tage') }, slides);
+    const label = el('span', { class: 'muted small' });
+    const index = () => Math.round(track.scrollLeft / Math.max(1, track.clientWidth));
+    const update = () => {
+      const i = Math.min(index(), slides.length - 1);
+      label.textContent = `${i + 1} / ${slides.length}`;
+      prev.disabled = i <= 0;
+      next.disabled = i >= slides.length - 1;
+      dayIndex = i;
+    };
+    const go = (d) => track.scrollTo({ left: (index() + d) * track.clientWidth, behavior: 'smooth' });
+    const prev = el('button', { class: 'ghost small', 'aria-label': t('vorheriger Tag'), onclick: () => go(-1) }, '‹');
+    const next = el('button', { class: 'ghost small', 'aria-label': t('nächster Tag'), onclick: () => go(1) }, '›');
+    track.addEventListener('scroll', () => requestAnimationFrame(update), { passive: true });
+    cards.push(el('div', { class: 'carousel-wrap' },
+      el('div', { class: 'carousel-head' }, el('h3', {}, t('Nächste Tage')), el('span', { class: 'carousel-nav' }, prev, label, next)),
+      track));
+    // nach dem Neuzeichnen am selben Tag bleiben
+    requestAnimationFrame(() => { track.scrollLeft = Math.min(dayIndex, slides.length - 1) * track.clientWidth; update(); });
   }
   $('dash').replaceChildren(...cards.filter(Boolean));
 }

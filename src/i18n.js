@@ -52,6 +52,10 @@ export const EN = {
   'Tippe bei einem Upgrade auf + und wähle, was danach kommen soll – dann steht hier zu jedem Tag, was du starten und bereitlegen musst.':
     'Tap + on an upgrade and choose what comes next – then this shows, for each day, what to start and what to have ready.',
   'Morgen': 'Tomorrow',
+  'geplant': 'planned',
+  'Nächste Tage': 'Next days',
+  'vorheriger Tag': 'previous day',
+  'nächster Tag': 'next day',
   'Fortschritt': 'Progress',
   'Plan': 'Plan',
   'Bücher': 'Books',

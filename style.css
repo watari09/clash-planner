@@ -253,3 +253,12 @@ select.inline {
 .items li.ev .grow { justify-content: flex-start; align-items: flex-start; }
 .items li.ev .name { flex: 1; text-align: left; }
 .ev .next, .ev .prep { display: block; }
+
+/* Karussell der nächsten Tage */
+.carousel-head { display: flex; justify-content: space-between; align-items: center; margin: 14px 2px 8px; }
+.carousel-nav { display: flex; align-items: center; gap: 8px; }
+.carousel-nav button { padding: 4px 12px; font-size: 1.1rem; }
+.carousel { display: flex; gap: 0; overflow-x: auto; scroll-snap-type: x mandatory; scroll-behavior: smooth; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.carousel::-webkit-scrollbar { display: none; }
+.carousel > .slide { flex: 0 0 100%; scroll-snap-align: start; margin-bottom: 0; }
+.tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 99px; font-size: .72rem; color: #0c2614; background: var(--free); }

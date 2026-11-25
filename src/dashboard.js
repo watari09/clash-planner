@@ -42,24 +42,46 @@ export function dashboard(running, sim, slots, options = {}) {
 }
 
 /**
- * Tagesansicht: Ereignisse (laufende Upgrades fertig, geplante Starts) nach Kalendertag gruppiert.
- * @returns [{ day: Date (Tagesbeginn), today: bool, entries: [{ type: 'finish'|'start', at, item?, step? }], prepare }]
+ * Tagesansicht: Ereignisse nach Kalendertag gruppiert.
+ * - finish: ein laufendes ODER geplantes Upgrade wird fertig; `next` = der Plan-Schritt, der danach
+ *   auf demselben Platz startet (z. B. Wächter fertig → Sprungfalle → wenn die fertig ist → nächstes).
+ * - start: ein geplanter Start, der keiner Fertigstellung zugeordnet ist (z. B. auf einem freien Platz).
+ * @returns [{ day, today, entries: [{ type, at, item?, step?, next? }], prepare }]
  */
 export function dayView(running, sim, now = Date.now(), days = 7) {
   const startOfDay = (ms) => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
   const today = startOfDay(now);
   const until = today + days * 86400e3;
+  const steps = (sim?.steps || []).filter((s) => s.kind !== 'equip');
+
+  // Alle Fertigstellungen (laufend + geplant) in zeitlicher Reihenfolge; jede bekommt den Plan-Schritt,
+  // der zur selben Zeit in derselben Gruppe startet
+  const finishes = [
+    ...running.filter((r) => r.finishAt > now).map((r) => ({ type: 'finish', at: r.finishAt, item: r, group: r.group })),
+    ...steps.filter((s) => s.end > s.start).map((s) => ({
+      type: 'finish', at: s.end, group: s.group, planned: true,
+      item: { id: s.id, name: s.name, level: s.to, group: s.group, finishAt: s.end, gearUp: s.kind === 'gear', fromStep: s.index },
+    })),
+  ].sort((a, b) => a.at - b.at);
+  const used = new Set();
+  for (const f of finishes) {
+    const next = steps.find((s) => !used.has(s.index) && s.group === f.group && Math.abs(s.start - f.at) < 1000);
+    if (next) { used.add(next.index); f.next = next; }
+  }
   const entries = [
-    ...running.filter((r) => r.finishAt > now && r.finishAt < until).map((r) => ({ type: 'finish', at: r.finishAt, item: r })),
-    ...(sim?.steps || []).filter((s) => s.kind !== 'equip' && s.start < until && s.start >= now - 60e3).map((s) => ({ type: 'start', at: Math.max(s.start, now), step: s })),
+    ...finishes.filter((f) => f.at < until),
+    ...steps.filter((s) => !used.has(s.index) && s.start < until && s.start >= now - 60e3)
+      .map((s) => ({ type: 'start', at: Math.max(s.start, now), step: s })),
   ].sort((a, b) => a.at - b.at || (a.type === 'finish' ? -1 : 1));
+
   const out = [];
   for (const e of entries) {
     const day = startOfDay(e.at);
     let bucket = out.find((b) => b.day === day);
     if (!bucket) { bucket = { day, today: day === today, entries: [], prepare: {} }; out.push(bucket); }
     bucket.entries.push(e);
-    if (e.type === 'start') for (const [r, n] of Object.entries(e.step.costs || {})) bucket.prepare[r] = (bucket.prepare[r] || 0) + n;
+    const step = e.type === 'start' ? e.step : e.next;
+    if (step) for (const [r, n] of Object.entries(step.costs || {})) bucket.prepare[r] = (bucket.prepare[r] || 0) + n;
   }
   return out;
 }
