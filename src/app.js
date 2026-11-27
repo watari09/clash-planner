@@ -919,9 +919,9 @@ function renderDash(r, now) {
       el('span', { class: 'name' }, t('Starten: {what}', { what: stepText(e.step) }),
         el('span', { class: 'sub' }, gname(e.step.group)),
         Object.keys(e.step.costs).length ? el('span', { class: 'prep' }, costEl(e.step.costs)) : null)));
-  const rows = (entries) => entries
-    .filter((e) => e.type === 'finish' || !shownSteps.has(e.step.index))
-    .map((e) => (e.type === 'finish' ? finishRow(e) : startRow(e)));
+  const visible = (entries) => entries.filter((e) => e.type === 'finish' || !shownSteps.has(e.step.index));
+  const rowOf = (e) => (e.type === 'finish' ? finishRow(e) : startRow(e));
+  const rows = (entries) => visible(entries).map(rowOf);
 
   // ----- Heute zu tun -----
   const todayBucket = daysList.find((b) => b.today) || { entries: [], prepare: {} };
@@ -941,17 +941,19 @@ function renderDash(r, now) {
   // Uhrenturm: bereit (mit Knopf) oder heute wieder bereit – ausblendbar über "Anpassen" in der Trank-Leiste
   const tower = r.clockTowerReadyAt;
   const endOfToday = new Date(now).setHours(24, 0, 0, 0);
+  const timed = []; // Einträge mit Uhrzeit, chronologisch einsortiert
   if (tower && !quickHidden().includes('clockTower') && tower < endOfToday) {
     const ready = tower <= now;
-    todo.push(el('li', { class: 'ev g-bb' },
+    timed.push({ at: Math.max(tower, now), node: el('li', { class: 'ev g-bb' },
       el('span', { class: 'grow' },
         el('span', { class: 'at' }, ready ? t('jetzt') : clock(tower)),
         el('span', { class: 'name' }, icon('clockTower', 'head-ico'), ready ? t('Uhrenturm bereit') : t('Uhrenturm wieder bereit'),
           el('span', { class: 'sub' }, t('Boost für das Nachtdorf – nach dem Benutzen hier eintragen')))),
-      ready ? el('span', { class: 'adds' }, el('button', { class: 'ghost small', onclick: () => logBoost('clockTower') }, t('Benutzt'))) : null));
+      ready ? el('span', { class: 'adds' }, el('button', { class: 'ghost small', onclick: () => logBoost('clockTower') }, t('Benutzt'))) : null) });
   }
   // geplante Starts "jetzt" sind schon bei den freien Plätzen erwähnt
-  todo.push(...rows(todayBucket.entries.filter((e) => !(e.type === 'start' && e.at <= now + 60e3))));
+  for (const e of visible(todayBucket.entries.filter((x) => !(x.type === 'start' && x.at <= now + 60e3)))) timed.push({ at: e.at, node: rowOf(e) });
+  todo.push(...timed.sort((a, b) => a.at - b.at).map((x) => x.node));
 
   const cards = [el('section', { class: 'card today' },
     el('div', { class: 'group-head' }, el('h3', {}, t('Heute zu tun')), el('span', { class: 'muted small' }, new Intl.DateTimeFormat(locale(), { weekday: 'long', day: '2-digit', month: '2-digit' }).format(new Date(now)))),

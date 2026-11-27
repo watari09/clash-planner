@@ -37,6 +37,8 @@ SIZE = 64
 # Manche Symbole liegen im Atlas gedreht: Grad im Uhrzeigersinn, um sie aufrecht zu stellen
 ROTATE = {"builderPotion": -90, "builderBite": -90, "labLicorice": -90, "CommonOre": 270,
           "book-fighting": 270, "book-spells": 270, "book-heroes": 270}
+# Drehung der Buch-Embleme (gegenüber dem Atlas), damit sie aufrecht auf dem Deckel stehen
+EMBLEM_ROTATE = {"book-building": 180}
 
 
 def index(apk):
@@ -105,6 +107,8 @@ def build(name, im):
         # (und nicht mitgedreht). Buch = größtes Teil, Emblem = zweitgrößtes, auf den Deckel legen.
         book = cut(turned, parts(turned)[0])
         emblem = cut(im, parts(im)[1])
+        if name in EMBLEM_ROTATE:
+            emblem = emblem.rotate(-EMBLEM_ROTATE[name], expand=True)
         f = 0.45 * book.width / max(emblem.size)
         emblem = emblem.resize((max(1, round(emblem.width * f)), max(1, round(emblem.height * f))), Image.LANCZOS)
         book.alpha_composite(emblem, (round(0.42 * book.width - emblem.width / 2), round(0.55 * book.height - emblem.height / 2)))
