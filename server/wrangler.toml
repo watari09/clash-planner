@@ -1,0 +1,9 @@
+# Kleiner Server für den Upgrade-Planer: speichert je Person den letzten Stand (Export, Boosts, Plan)
+# unter einer zufälligen geheimen Kennung, damit Widgets einen festen Link haben.
+name = "clash-planner"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "0320d9580dda41288d0cfe6787071f3f"

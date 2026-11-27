@@ -4,7 +4,7 @@ import json, re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-files = ["./", "index.html", "style.css", "manifest.webmanifest", "icon.svg", "icon-192.png", "apple-touch-icon.png", "data/game.json"]
+files = ["./", "index.html", "widget.html", "style.css", "manifest.webmanifest", "icon.svg", "icon-192.png", "apple-touch-icon.png", "data/game.json"]
 files += sorted(f"src/{p.name}" for p in (ROOT / "src").glob("*.js"))
 files += sorted(f"img/{p.name}" for p in (ROOT / "img").glob("*.webp"))
 sw = (ROOT / "sw.js").read_text(encoding="utf-8")

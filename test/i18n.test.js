@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { EN } from '../src/i18n.js';
 
-const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
+const app = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8') + readFileSync(new URL('../src/widget.js', import.meta.url), 'utf8');
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
 const placeholders = (s) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
 

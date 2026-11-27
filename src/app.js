@@ -1,8 +1,10 @@
 import { readVillage, analyze, progress, schedule, toIcs, icsCalendar, formatDuration, levelEntry, RESOURCES, GROUPS } from './village.js';
 import { dashboard, dayView } from './dashboard.js';
 import { nextStep, nextEquipStep, gearCandidates, planInstances, simulate, cleanPlan, groupOf, HOME_GROUPS } from './planner.js';
-import { BOOST_TYPES, applyBoosts, runningKey, helperDay } from './boosts.js';
+import { BOOST_TYPES, runningKey } from './boosts.js';
 import { magicItems } from './magic.js';
+import { applyEvents, slotsByGroup as slotsOf } from './state.js';
+import { newId, upload, remove as removeRemote, widgetUrl } from './sync.js';
 import { bobStatus, TASK_TEXT } from './bob.js';
 import { oreStatus, ORES } from './ore.js';
 import { wallStatus, wallAfford } from './walls.js';
@@ -51,20 +53,7 @@ function current() {
   // Boosts vor dem Export stecken schon in den Timern → aufräumen
   const events = getBoosts().filter((e) => e.at >= r.exportedAt);
   if (events.length !== getBoosts().length) setBoosts(events);
-  const { running, applied } = applyBoosts(r.running, events, game, village);
-  r.running = running;
-  for (const g of r.groups) g.items = running.filter((x) => x.group === g.key);
-  r.boosts = applied;
-  // Gemeinsamer 23-h-Arbeitstag der Helfer; jeder Helfer einmal pro Arbeitstag
-  const day = helperDay(r.exportedAt, r.helpers[0]?.readyAt ?? r.exportedAt, events);
-  r.helperDayEnd = day.dayEnd;
-  for (const h of r.helpers) {
-    const type = Object.keys(BOOST_TYPES).find((k) => BOOST_TYPES[k].helper === h.id);
-    if (type) h.readyAt = day.readyAt(type);
-  }
-  const tower = applied.filter((a) => a.type === 'clockTower').at(-1);
-  if (tower) r.clockTowerReadyAt = Math.max(r.clockTowerReadyAt || 0, tower.at + game.boosts.clockTower.cooldown * 1000);
-  return r;
+  return applyEvents(r, events, game, village);
 }
 const boost = () => ({ time: 0, cost: 0, ...readJson(STORE_BOOST, {}) });
 
@@ -200,6 +189,7 @@ function render() {
   renderDash(r, now);
   renderMagic(r, now);
   renderOre();
+  scheduleSync();
   showTab(localStorage.getItem(STORE_TAB) || 'dash');
 }
 
@@ -219,11 +209,7 @@ function toast(msg) {
 
 /** Plätze je Gruppe wie in der Übersicht: Schätzung bzw. eigene Angabe, mindestens so viele wie gerade laufen. */
 function slotsByGroup(r, now) {
-  const overrides = readJson(STORE_SLOTS, {});
-  return Object.fromEntries(r.groups.map((g) => [
-    g.key,
-    Math.max(overrides[g.key] ?? g.slots, g.items.filter((i) => i.finishAt > now).length),
-  ]));
+  return slotsOf(r, now, readJson(STORE_SLOTS, {}));
 }
 
 function renderSwitcher() {
@@ -1189,6 +1175,7 @@ function renderDash(r, now) {
     Object.keys(todayBucket.prepare).length ? el('p', { class: 'prep-line' }, t('Heute bereitlegen:'), ' ', costEl(todayBucket.prepare)) : null)];
   cards.push(quickBoosts(r, now));
   cards.push(heroCard(r, now));
+  cards.push(widgetCard());
 
   if (!d.planned) {
     cards.push(el('section', { class: 'card hint-card' },
@@ -1240,6 +1227,108 @@ function dayTimesLine(d) {
     onchange: (e) => { localStorage.setItem(STORE_DAY, JSON.stringify({ ...d, [key]: Number(e.target.value) })); render(); },
   }, Array.from({ length: 24 }, (_, h) => el('option', { value: h, selected: h === d[key] }, `${h}:00`)));
   return el('p', { class: 'muted small day-times' }, t('Vorschläge passend zu deinem Tag: wach von '), sel('wake'), t(' bis '), sel('sleep'), '.');
+}
+
+// ---------- Widget / Server ----------
+
+const syncKey = () => `planner.sync.${village?.tag || 'Dorf'}`; // { id, last, at, error }
+let syncTimer = 0;
+
+/** Was das Widget braucht: Export, Boosts, Plan, Plätze, Rabatt, Sprache. */
+function syncBundle() {
+  return {
+    v: 1,
+    lang: LANG,
+    name: readJson(STORE_NAMES, {})[village?.tag] || '',
+    village: villages()[village?.tag || 'Dorf'],
+    boosts: getBoosts(),
+    plan: getPlan(),
+    slots: readJson(STORE_SLOTS, {}),
+    boost: boost(),
+    quickHidden: readJson(STORE_QUICK, []),
+  };
+}
+
+/** Nach jeder Änderung (gebündelt) hochladen – nur wenn eingeschaltet und wirklich etwas anders ist. */
+function scheduleSync() {
+  const st = readJson(syncKey(), null);
+  if (!st?.id || !village) return;
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(async () => {
+    const bundle = syncBundle();
+    const text = JSON.stringify(bundle);
+    const cur = readJson(syncKey(), null);
+    if (!cur?.id || (cur.last === text.length + ':' + hash(text) && !cur.error)) return;
+    try {
+      await upload(cur.id, { ...bundle, at: Date.now() });
+      localStorage.setItem(syncKey(), JSON.stringify({ ...cur, last: text.length + ':' + hash(text), at: Date.now(), error: null }));
+    } catch (e) {
+      localStorage.setItem(syncKey(), JSON.stringify({ ...cur, error: String(e.message || e) }));
+    }
+    document.querySelector('.widget-card')?.replaceWith(widgetCard()); // Status in der Karte auffrischen
+  }, 1500);
+}
+
+function hash(text) {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
+function widgetCard() {
+  const st = readJson(syncKey(), null);
+  const key = 'widget';
+  const body = st?.id
+    ? (() => {
+      const url = widgetUrl(st.id);
+      return [
+        el('p', { class: 'small' }, t('Dein Widget-Link (geheim halten – wer ihn hat, sieht dein Dorf):')),
+        el('div', { class: 'row link-row' },
+          el('input', { type: 'text', readonly: true, value: url, onclick: (e) => e.target.select() }),
+          el('button', { class: 'ghost small', onclick: () => { navigator.clipboard?.writeText(url).then(() => toast(t('Link kopiert'))); } }, t('Kopieren'))),
+        el('p', { class: 'muted small' }, st.error
+          ? el('span', { class: 'warn' }, t('Hochladen fehlgeschlagen ({e}) – versuche es beim nächsten Öffnen erneut.', { e: st.error }))
+          : st.at ? t('Zuletzt hochgeladen: {t}. Neue Exporte, Boosts und Plan-Änderungen gehen automatisch mit.', { t: when(st.at) }) : t('Wird hochgeladen …')),
+        el('h4', {}, 'Android'),
+        el('ol', { class: 'small steps' },
+          el('li', {}, t('App „AnyWidget“ (oder „Widgery“) aus dem Play Store installieren.')),
+          el('li', {}, t('Auf dem Startbildschirm ein Widget der App hinzufügen und den Link oben einfügen.')),
+          el('li', {}, t('Aktualisierung auf 30 Minuten stellen – fertig.'))),
+        el('h4', {}, 'iPhone'),
+        el('ol', { class: 'small steps' },
+          el('li', {}, t('App „Web Widget“ oder „Busybody“ aus dem App Store installieren.')),
+          el('li', {}, t('Widget hinzufügen und den Link oben einfügen.'))),
+        el('p', { class: 'muted small' }, t('Testen: Link im Browser öffnen – so sieht das Widget aus.')),
+        el('button', {
+          class: 'ghost small',
+          onclick: async () => {
+            if (!confirm(t('Widget ausschalten und deine Daten vom Server löschen?'))) return;
+            try { await removeRemote(st.id); } catch { /* offline: läuft nach 60 Tagen ohnehin ab */ }
+            localStorage.removeItem(syncKey());
+            toast(t('Widget ausgeschaltet, Daten gelöscht'));
+            render();
+          },
+        }, t('Ausschalten & Daten löschen')),
+      ];
+    })()
+    : [
+      el('p', { class: 'small' }, t('Zeigt freie Bauarbeiter, die nächsten Fertig-Zeiten und den Uhrenturm als Widget auf dem Startbildschirm – über eine kostenlose Widget-App.')),
+      el('p', { class: 'muted small' }, t('Dafür wird dein Stand (Export, eingetragene Boosts, Plan) auf einem kleinen Server gespeichert, unter einer zufälligen geheimen Kennung. Keine Anmeldung, keine Passwörter; du kannst ihn jederzeit löschen, sonst verfällt er 60 Tage nach dem letzten Update.')),
+      el('button', {
+        class: 'primary',
+        onclick: () => {
+          localStorage.setItem(syncKey(), JSON.stringify({ id: newId() }));
+          openCats.add(key);
+          render();
+        },
+      }, t('Widget einrichten')),
+    ];
+  return el('details', {
+    class: 'card cat widget-card', open: openCats.has(key),
+    ontoggle: (e) => { if (e.target.open) openCats.add(key); else openCats.delete(key); },
+  },
+    el('summary', {}, el('span', { class: 'name' }, t('Widget für den Startbildschirm')), el('span', { class: 'cat-pct' }, st?.id ? t('an') : t('aus'))),
+    ...body);
 }
 
 // ---------- Helden ----------

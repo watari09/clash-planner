@@ -385,3 +385,8 @@ h1 { background: linear-gradient(90deg, #ffd25a, #ff9f6b 55%, #e86bd8); -webkit-
 .day-times select { margin: 0 2px; }
 .bob-choice { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
 .bob-choice select { max-width: 100%; }
+
+/* Widget-Karte */
+.widget-card .link-row { display: flex; gap: 6px; }
+.widget-card .link-row input { flex: 1; min-width: 0; font-size: .8rem; }
+.widget-card h4 { margin: 12px 0 4px; font-size: .9rem; }
