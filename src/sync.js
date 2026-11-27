@@ -3,7 +3,7 @@
 
 const LOCAL = ['localhost', '127.0.0.1'].includes(globalThis.location?.hostname);
 // Lokal (Entwicklung) gegen `npx wrangler dev` in server/, sonst gegen den echten Server
-export const API = LOCAL ? 'http://127.0.0.1:8787/v1/state/' : 'https://clash-planner.SUBDOMAIN.workers.dev/v1/state/';
+export const API = LOCAL ? 'http://127.0.0.1:8787/v1/state/' : 'https://clash-planner.watari09.workers.dev/v1/state/';
 
 /** Zufällige Kennung (128 Bit, base64url, 22 Zeichen). */
 export function newId() {
