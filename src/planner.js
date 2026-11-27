@@ -124,8 +124,14 @@ function bump(list, to) {
  * @param slots    { gruppe: Anzahl Plätze }
  * @param options  { now, timeFactor, costFactor, lang }
  */
+export const HOME_GROUPS = new Set(['home_builders', 'lab', 'pets']);
+
 export function simulate(village, game, plan, running, slots, options = {}) {
-  const { now = Date.now(), timeFactor = 1, costFactor = 1, lang = 'de' } = options;
+  const { now = Date.now(), lang = 'de' } = options;
+  // Goldpass-Rabatt gilt nur im Heimatdorf (Bauarbeiter, Labor, Begleiterhaus) – nicht im Nachtdorf, nicht für Erz
+  const homeOnly = (f = 1) => (g) => (HOME_GROUPS.has(g) ? f : 1);
+  const tf = homeOnly(options.timeFactor);
+  const cf = homeOnly(options.costFactor);
   const exported = instances(village);
   // Exemplare mit Zeitpunkt, ab dem sie weiter ausgebaut werden können (laufende: erst wenn fertig)
   const levels = {};
@@ -155,7 +161,7 @@ export function simulate(village, game, plan, running, slots, options = {}) {
       if (cur >= e.to) { dropped.push({ ...e, index, reason: 'done' }); continue; }
       if (cur !== e.to - 1) { dropped.push({ ...e, index, reason: 'blocked' }); continue; }
       equipLevels.set(e.id, e.to);
-      const costs = Object.fromEntries(Object.entries(item.ore?.[e.to - 1] || {}).map(([r, n]) => [r, Math.round(n * costFactor)]));
+      const costs = Object.fromEntries(Object.entries(item.ore?.[e.to - 1] || {}).map(([r, n]) => [r, n]));
       steps.push({ index, id: e.id, kind: 'equip', group: 'equipment', name: item.name[lang] || item.name.en, from: e.to - 1, to: e.to, start: now, end: now, costs });
       continue;
     }
@@ -167,10 +173,10 @@ export function simulate(village, game, plan, running, slots, options = {}) {
       const queue = free.builder_builders;
       if (!queue?.length) { dropped.push({ ...e, index, reason: 'unknown' }); continue; }
       const start = Math.max(queue.shift(), now, c.bbReadyAt || 0);
-      const end = start + Math.round(c.seconds * timeFactor) * 1000;
+      const end = start + Math.round(c.seconds * tf('builder_builders')) * 1000;
       queue.push(end);
       queue.sort((a, b) => a - b);
-      const costs = Object.fromEntries(Object.entries(c.cost).map(([r, n]) => [r, Math.round(n * costFactor)]));
+      const costs = Object.fromEntries(Object.entries(c.cost).map(([r, n]) => [r, Math.round(n * cf('builder_builders'))]));
       steps.push({ index, id: e.id, kind: 'gear', group: 'builder_builders', name: c.name, start, end, costs });
       continue;
     }
@@ -189,7 +195,7 @@ export function simulate(village, game, plan, running, slots, options = {}) {
     const queue = free[group];
     // frühestens, wenn ein Platz frei ist UND dieses Exemplar nicht mehr im Ausbau steckt
     const start = Math.max(queue.shift(), inst.readyAt, now);
-    const end = start + Math.round(sec * timeFactor) * 1000;
+    const end = start + Math.round(sec * tf(group)) * 1000;
     queue.push(end);
     queue.sort((a, b) => a - b);
     inst.lvl = e.to;
@@ -203,7 +209,7 @@ export function simulate(village, game, plan, running, slots, options = {}) {
       to: e.to,
       start,
       end,
-      costs: res === 'Diamonds' || !cost ? {} : { [res]: Math.round(cost * costFactor) },
+      costs: res === 'Diamonds' || !cost ? {} : { [res]: Math.round(cost * cf(group)) },
     });
   }
 

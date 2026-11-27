@@ -356,3 +356,30 @@ h1 { background: linear-gradient(90deg, #ffd25a, #ff9f6b 55%, #e86bd8); -webkit-
 .q-img { width: 2.4rem; height: 2.4rem; object-fit: contain; filter: drop-shadow(0 2px 3px rgba(0,0,0,.35)); }
 .boost-btn { display: inline-flex; align-items: center; }
 .facts dt .res-ico { width: 1.3em; height: 1.3em; }
+
+/* Mauer-Rechner */
+.walls-wrap { display: grid; gap: 12px; margin-bottom: 12px; }
+.card.walls > summary { font-weight: 600; }
+.walls .pay { display: inline-flex; gap: 2px; margin-left: 4px; }
+.wall-calc h4 { margin: 12px 0 6px; font-size: .9rem; }
+.wall-calc .row.boost { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wall-calc label.have { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: .85rem; }
+.wall-calc input { flex: 1 1 100%; width: 100%; min-width: 0; }
+.wall-calc .sub { display: block; margin-top: 2px; }
+
+/* Helden */
+.heroes li.ready .time b { color: var(--ok, #6fd38b); }
+.heroes li.busy .time b { color: var(--c-home); }
+.warn-card { border-color: color-mix(in srgb, #f0a040 60%, var(--line)); background: color-mix(in srgb, #f0a040 8%, var(--card)); }
+
+/* Verlauf */
+.history .hist { width: 100%; height: auto; display: block; margin: 4px 0 10px; }
+.history .hist .grid { stroke: var(--line); stroke-width: 1; }
+.history .hist .axis { fill: var(--muted); font-size: 9px; }
+.history .hist .pt:hover circle:last-of-type { r: 5; }
+
+/* Vorschlag für freie Plätze */
+.ev .suggest { display: block; margin-top: 4px; padding: 6px 8px; border-radius: 10px; background: color-mix(in srgb, var(--c-home) 10%, transparent); font-size: .85rem; }
+.ev .suggest .sub { display: block; }
+.ev .suggest button { margin-top: 4px; }
+.day-times select { margin: 0 2px; }

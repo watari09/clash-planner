@@ -134,3 +134,12 @@ test('Laufendes Upgrade: nächste Stufe desselben Exemplars erst, wenn es fertig
   const x = simulate(village, game, [{ id: 1000021, to: 9, n: 1 }], r.running, { ...slots, home_builders: 6 }, { now });
   assert.equal(x.steps[0].start, now);
 });
+
+test('Goldpass-Rabatt gilt nur im Heimatdorf', () => {
+  const step = (village.buildings2 || []).map((b) => nextStep(village, [], b.data, game.items[String(b.data)]?.levels.length || 0)).find(Boolean);
+  const plain = simulate(village, game, [step], r.running, slots, { now });
+  const pass = simulate(village, game, [step], r.running, slots, { now, timeFactor: 0.8, costFactor: 0.8 });
+  assert.equal(pass.steps[0].group, 'builder_builders');
+  assert.deepEqual(pass.steps[0].costs, plain.steps[0].costs);
+  assert.equal(pass.steps[0].end - pass.steps[0].start, plain.steps[0].end - plain.steps[0].start);
+});

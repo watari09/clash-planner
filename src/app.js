@@ -1,15 +1,19 @@
 import { readVillage, analyze, progress, schedule, toIcs, icsCalendar, formatDuration, levelEntry, RESOURCES, GROUPS } from './village.js';
 import { dashboard, dayView } from './dashboard.js';
-import { nextStep, nextEquipStep, gearCandidates, planInstances, simulate, cleanPlan, groupOf } from './planner.js';
+import { nextStep, nextEquipStep, gearCandidates, planInstances, simulate, cleanPlan, groupOf, HOME_GROUPS } from './planner.js';
 import { BOOST_TYPES, applyBoosts, runningKey, helperDay } from './boosts.js';
 import { magicItems } from './magic.js';
 import { bobStatus, TASK_TEXT } from './bob.js';
 import { oreStatus, ORES } from './ore.js';
+import { wallStatus, wallAfford } from './walls.js';
+import { heroAvailability } from './heroes.js';
+import { suggest, DAY } from './suggest.js';
 import { t, LANG, setLang, locale } from './i18n.js';
 
 // localStorage-Schlüssel
 const STORE_VILLAGES = 'planner.villages'; // { tag: json-text }
 const STORE_CURRENT = 'planner.current'; // tag des angezeigten Dorfs
+const STORE_NAMES = 'planner.names'; // { tag: eigener Name } – z. B. "Hauptdorf", "Zweitaccount"
 const STORE_SLOTS = 'planner.slots'; // vom Nutzer geänderte Platzanzahl je Gruppe
 const STORE_BOOST = 'planner.boost'; // { time: %, cost: % } z. B. Goldpass/Season-Boost
 const LEGACY_VILLAGE = 'planner.village'; // alte Version: nur ein Dorf
@@ -21,6 +25,7 @@ const FILTERS = [
 ]; // Beschriftung wird über t() übersetzt
 const planKey = () => `planner.plan.${village?.tag || 'Dorf'}`; // [{ id, to, n }] je Dorf
 const boostKey = () => `planner.boosts.${village?.tag || 'Dorf'}`; // [{ type, at, target? }] je Dorf
+const historyKey = () => `planner.history.${village?.tag || 'Dorf'}`; // [{ at, th, bh, home, builder }] je Export
 const targetKey = () => `planner.target.${village?.tag || 'Dorf'}`; // { home, builder } Ziel-Rathaus/-Meisterhütte
 
 const $ = (id) => document.getElementById(id);
@@ -187,6 +192,7 @@ function render() {
       age > 12 * 3600e3 ? t(' – für aktuelle Zeiten neu exportieren.') : ''),
   ]);
 
+  recordHistory(r);
   renderRunning(r, now);
   renderExtras(r, now);
   renderProgress(r);
@@ -224,12 +230,29 @@ function renderSwitcher() {
   const all = villages();
   const tags = Object.keys(all);
   const current = village?.tag || 'Dorf';
+  const names = readJson(STORE_NAMES, {});
+  const label = (tag) => (names[tag] ? `${names[tag]} (${tag})` : tag);
+  // Rathaus je Dorf für die Auswahl (ohne alles neu auszuwerten)
+  const hall = (tag) => {
+    try { return readVillage(all[tag]).buildings.find((b) => b.data === 1000001)?.lvl; } catch { return null; }
+  };
   $('switcher').hidden = !village;
   $('switcher').replaceChildren(
     tags.length > 1
       ? el('select', { 'aria-label': t('Dorf wählen'), onchange: (e) => select(e.target.value) },
-        tags.map((t) => el('option', { value: t, selected: t === current }, t)))
-      : el('span', { class: 'muted' }, t('Gespeichert: {tag}', { tag: current })),
+        tags.map((tag) => el('option', { value: tag, selected: tag === current }, `${label(tag)}${hall(tag) ? ` · ${t('RH {n}', { n: hall(tag) })}` : ''}`)))
+      : el('span', { class: 'muted' }, t('Gespeichert: {tag}', { tag: label(current) })),
+    el('button', {
+      class: 'ghost small',
+      onclick: () => {
+        const n = prompt(t('Name für {tag} (z. B. Hauptdorf, Zweitaccount):', { tag: current }), names[current] || '');
+        if (n === null) return;
+        const all2 = readJson(STORE_NAMES, {});
+        if (n.trim()) all2[current] = n.trim().slice(0, 30); else delete all2[current];
+        localStorage.setItem(STORE_NAMES, JSON.stringify(all2));
+        renderSwitcher();
+      },
+    }, t('Umbenennen')),
     el('button', {
       class: 'ghost small',
       onclick: () => { showInput = !showInput; render(); if (showInput) $('input').scrollIntoView({ behavior: 'smooth' }); },
@@ -410,17 +433,25 @@ const SORTS = {
   name: { de: 'Name A–Z', fn: (a, b) => a.name.localeCompare(b.name) },
 };
 
-function listControls() {
-  const opts = { sort: 'total', showDone: false, exclude: [], ...readJson(STORE_LIST, {}) };
-  const save = (patch) => { localStorage.setItem(STORE_LIST, JSON.stringify({ ...opts, ...patch })); render(); };
+/** Goldpass-Auswahl (gilt nur fürs Heimatdorf) – im Fortschritt und im Plan. */
+function goldPassChips() {
   const b = boost();
   const preset = (pct, label) => el('button', {
     class: `chip ${b.time === pct && b.cost === pct ? 'on' : ''}`,
     onclick: () => { localStorage.setItem(STORE_BOOST, JSON.stringify({ time: pct, cost: pct })); render(); },
   }, label);
+  const custom = (b.time || b.cost) && !(b.time === b.cost && [17, 20].includes(b.time));
+  return el('div', { class: 'chips' }, el('span', { class: 'muted' }, t('Goldpass:')),
+    preset(0, t('keiner')), preset(17, t('realistisch 17 %')), preset(20, t('voll 20 %')),
+    custom ? el('span', { class: 'chip on' }, t('eigener: −{a} % Zeit, −{b} % Kosten', { a: b.time, b: b.cost })) : null,
+    el('span', { class: 'muted small' }, t('nur Heimatdorf')));
+}
+
+function listControls() {
+  const opts = { sort: 'total', showDone: false, exclude: [], ...readJson(STORE_LIST, {}) };
+  const save = (patch) => { localStorage.setItem(STORE_LIST, JSON.stringify({ ...opts, ...patch })); render(); };
   return el('section', { class: 'card controls' },
-    el('div', { class: 'chips' }, el('span', { class: 'muted' }, t('Goldpass:')),
-      preset(0, t('keiner')), preset(17, t('realistisch 17 %')), preset(20, t('voll 20 %'))),
+    goldPassChips(),
     el('div', { class: 'chips' }, el('span', { class: 'muted' }, t('Zeigen:')),
       FILTERS.map(([key, label]) => el('button', {
         class: `chip ${opts.exclude.includes(key) ? '' : 'on'}`,
@@ -499,7 +530,10 @@ function renderProgress(r) {
     };
     const builderSelect = el('select', { class: 'inline', 'aria-label': t('Anzahl Bauarbeiter'), onchange: (e) => setBuilders(Number(e.target.value)) },
       Array.from({ length: v === 'home' ? 7 : 3 }, (_, i) => i + 1).map((n) => el('option', { value: n, selected: n === builders }, String(n))));
-    const realistic = schedule(x.builderChains, builders) * tf;
+    // Goldpass wirkt nur im Heimatdorf
+    const vtf = v === 'home' ? tf : 1;
+    const vcf = v === 'home' ? cf : 1;
+    const realistic = schedule(x.builderChains, builders) * vtf;
     const allCost = {};
     for (const c of x.categories) for (const [res, n] of Object.entries(c.cost)) allCost[res] = (allCost[res] || 0) + n;
 
@@ -535,11 +569,11 @@ function renderProgress(r) {
         el('dt', {}, t('Bauarbeiter')),
         el('dd', {}, days(realistic), t(' mit '), builderSelect, builders === 1 ? t(' Bauarbeiter') : t(' Bauarbeitern')),
         el('dt', {}, v === 'home' ? t('Labor') : t('Sternlabor')),
-        el('dd', {}, days(x.labSeconds * tf)),
+        el('dd', {}, days(x.labSeconds * vtf)),
         x.petSeconds ? el('dt', {}, t('Begleiterhaus')) : null,
-        x.petSeconds ? el('dd', {}, days(x.petSeconds * tf)) : null,
+        x.petSeconds ? el('dd', {}, days(x.petSeconds * vtf)) : null,
         el('dt', {}, t('Kosten')),
-        el('dd', {}, costEl(allCost, cf)),
+        el('dd', {}, costEl(allCost, vcf)),
       ),
       x.categories.filter((c) => c.total > 0).map((c) => el('details', {
         class: 'cat',
@@ -552,14 +586,161 @@ function renderProgress(r) {
         bar(c.percent),
         (c.items.length || (list.showDone && c.doneItems.length))
           ? el('ul', { class: 'items' },
-            [...c.items].sort(SORTS[list.sort]?.fn || SORTS.total.fn).map((i) => itemRow(i, tf, cf, c.key)),
-            list.showDone ? c.doneItems.map((i) => itemRow(i, tf, cf, c.key)) : null)
+            [...c.items].sort(SORTS[list.sort]?.fn || SORTS.total.fn).map((i) => itemRow(i, vtf, vcf, c.key)),
+            list.showDone ? c.doneItems.map((i) => itemRow(i, vtf, vcf, c.key)) : null)
           : el('p', { class: 'muted small' }, t('Alles auf Maximum.')),
       )),
       v === 'home' ? gearList() : null,
     ));
   }
-  $('progress').replaceChildren(...[listControls(), ...sections, renderBob(), renderBoost(b)].filter(Boolean));
+  $('progress').replaceChildren(...[listControls(), historyCard(), ...sections, renderWalls(cf), renderBob(), renderBoost(b)].filter(Boolean));
+}
+
+// ---------- Verlauf ----------
+
+/** Je Export ein Schnappschuss des Fortschritts zum Maximum des aktuellen Rathauses bzw. der Meisterhütte. */
+function recordHistory(r) {
+  const list = readJson(historyKey(), []);
+  if (list.some((x) => x.at === r.exportedAt)) return;
+  const p = progress(village, game, LANG, {});
+  list.push({ at: r.exportedAt, th: p.home?.current, bh: p.builder?.current, home: p.home?.percent, builder: p.builder?.percent });
+  list.sort((a, b) => a.at - b.at);
+  localStorage.setItem(historyKey(), JSON.stringify(list.slice(-300)));
+}
+
+/** Liniendiagramm einer Reihe (0–100 %), Unterbrechung bei neuer Halle; Punkte mit Tooltip. */
+function historyChart(points, key, hallKey, hallName, color) {
+  const W = 320; const H = 120; const P = { l: 30, r: 10, t: 10, b: 20 };
+  const t0 = points[0].at; const t1 = points.at(-1).at;
+  const lo = Math.max(0, Math.floor(Math.min(...points.map((x) => x[key])) / 10) * 10 - 10);
+  const x = (at) => P.l + (t1 > t0 ? (at - t0) / (t1 - t0) : 0.5) * (W - P.l - P.r);
+  const y = (v) => P.t + (1 - (v - lo) / (100 - lo)) * (H - P.t - P.b);
+  const NS = 'http://www.w3.org/2000/svg';
+  const svgEl = (tag, attrs, ...kids) => {
+    const e = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+    for (const c of kids) e.append(c);
+    return e;
+  };
+  const svg = svgEl('svg', { viewBox: `0 0 ${W} ${H}`, class: 'hist', role: 'img', 'aria-label': t('Verlauf {h}', { h: hallName }) });
+  for (const v of [lo, (lo + 100) / 2, 100]) {
+    svg.append(svgEl('line', { x1: P.l, x2: W - P.r, y1: y(v), y2: y(v), class: 'grid' }));
+    svg.append(svgEl('text', { x: P.l - 4, y: y(v) + 3, class: 'axis', 'text-anchor': 'end' }, `${Math.round(v)}`));
+  }
+  const fmtDay = new Intl.DateTimeFormat(locale(), { day: '2-digit', month: '2-digit' });
+  svg.append(svgEl('text', { x: P.l, y: H - 4, class: 'axis' }, fmtDay.format(t0)));
+  svg.append(svgEl('text', { x: W - P.r, y: H - 4, class: 'axis', 'text-anchor': 'end' }, fmtDay.format(t1)));
+  // je Hallen-Stufe eine eigene Linie (beim Rathaus-Upgrade fällt der Prozentwert)
+  let seg = [];
+  const flush = () => {
+    if (seg.length > 1) svg.append(svgEl('polyline', { points: seg.map((q) => `${x(q.at)},${y(q[key])}`).join(' '), fill: 'none', stroke: color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    seg = [];
+  };
+  points.forEach((q, i) => { if (i && q[hallKey] !== points[i - 1][hallKey]) flush(); seg.push(q); });
+  flush();
+  for (const q of points) {
+    const g = svgEl('g', { class: 'pt' },
+      svgEl('circle', { cx: x(q.at), cy: y(q[key]), r: 10, fill: 'transparent' }),
+      svgEl('circle', { cx: x(q.at), cy: y(q[key]), r: 4, fill: color, stroke: 'var(--card)', 'stroke-width': 2 }),
+      svgEl('title', {}, `${when(q.at)} · ${hallName} ${q[hallKey]} · ${pct(q[key])}`));
+    svg.append(g);
+  }
+  return svg;
+}
+
+function historyCard() {
+  const list = readJson(historyKey(), []);
+  const rows = [];
+  for (const [key, hallKey, name, color] of [['home', 'th', t('Rathaus'), 'var(--c-home)'], ['builder', 'bh', t('Meisterhütte'), 'var(--c-bb)']]) {
+    const pts = list.filter((q) => typeof q[key] === 'number');
+    if (!pts.length) continue;
+    const last = pts.at(-1);
+    const sameHall = pts.filter((q) => q[hallKey] === last[hallKey]);
+    const first = sameHall[0];
+    const delta = last[key] - first[key];
+    rows.push(el('div', { class: 'hist-row' },
+      el('p', { class: 'small' }, el('b', {}, `${name} ${last[hallKey]}: ${pct(last[key])}`), ' ',
+        sameHall.length > 1
+          ? el('span', { class: 'muted' }, t('{d} seit {t} ({n} Exporte)', { d: `${delta >= 0 ? '+' : '−'}${pct(Math.abs(delta))}`, t: when(first.at), n: sameHall.length }))
+          : null),
+      pts.length > 1 ? historyChart(pts, key, hallKey, name, color) : null));
+  }
+  if (!rows.length) return null;
+  const many = list.length > 1;
+  return el('details', {
+    class: 'card cat history', open: openCats.has('history'),
+    ontoggle: (e) => { if (e.target.open) openCats.add('history'); else openCats.delete('history'); },
+  },
+    el('summary', {}, el('span', { class: 'name' }, t('Verlauf')), el('span', { class: 'cat-pct' }, t('{n} Exporte', { n: list.length }))),
+    ...rows,
+    el('p', { class: 'muted small' }, many
+      ? t('Fortschritt zum Maximum der jeweiligen Halle, je Export ein Punkt. Nach einem Rathaus-Upgrade beginnt eine neue Linie.')
+      : t('Mit jedem neuen Export kommt ein Punkt dazu – dann siehst du hier, wie schnell du vorankommst.')));
+}
+
+// ---------- Mauern ----------
+
+const STORE_WALLS = 'planner.wallHave'; // { home: { Gold, Elixir }, builder: { Gold2, Elixir2 } }
+
+/** "1,5 Mio", "1.5m", "800k", "1.500.000" → Zahl */
+function parseAmount(text) {
+  const s = String(text).trim().toLowerCase().replace(/\s/g, '');
+  const m = s.match(/^([\d.,]+)(k|m|mio\.?|mrd\.?|b)?$/);
+  if (!m) return 0;
+  let num = m[1];
+  // Tausenderpunkte (1.500.000) vs. Dezimalzeichen (1,5 / 1.5)
+  if (/^\d{1,3}([.,]\d{3})+$/.test(num) && !m[2]) num = num.replace(/[.,]/g, '');
+  else num = num.replace(',', '.');
+  const f = { k: 1e3, m: 1e6, mio: 1e6, 'mio.': 1e6, mrd: 1e9, 'mrd.': 1e9, b: 1e9 }[m[2]] || 1;
+  return Math.round((parseFloat(num) || 0) * f);
+}
+
+function renderWalls(cf) {
+  const cards = [];
+  for (const [which, title, res] of [['home', t('Mauern im Heimatdorf'), ['Gold', 'Elixir']], ['builder', t('Mauern im Nachtdorf'), ['Gold2', 'Elixir2']]]) {
+    const st = wallStatus(village, game, which, which === 'home' ? cf : 1);
+    if (!st) continue;
+    const key = `walls:${which}`;
+    const have = readJson(STORE_WALLS, {})[which] || {};
+    const afford = wallAfford(village, game, which, have, which === 'home' ? cf : 1);
+    const levelsLine = st.byLevel.map((x) => `${x.count}× ${x.level}`).join(' · ');
+    const input = (r) => el('label', { class: 'have' }, icon(r, 'res-ico'), (RESOURCES[r]?.[LANG] || r), ' ',
+      el('input', {
+        type: 'text', inputmode: 'decimal', placeholder: t('z. B. 12 Mio'), value: have[r] ? fmtInt.format(have[r]) : '',
+        onchange: (e) => {
+          const all = readJson(STORE_WALLS, {});
+          all[which] = { ...(all[which] || {}), [r]: parseAmount(e.target.value) };
+          localStorage.setItem(STORE_WALLS, JSON.stringify(all));
+          openCats.add(key);
+          render();
+        },
+      }));
+    const done = st.byLevel.every((x) => x.level >= st.max);
+    cards.push(el('details', {
+      class: 'card cat walls', open: openCats.has(key),
+      ontoggle: (e) => { if (e.target.open) openCats.add(key); else openCats.delete(key); },
+    },
+      el('summary', {}, el('span', { class: 'name' }, title), el('span', { class: 'cat-pct' }, done ? t('fertig ✓') : t('{n} Stufen fehlen', { n: fmtInt.format(st.missingLevels) }))),
+      el('p', { class: 'small' }, t('{n} Mauern: {l}', { n: st.total, l: levelsLine })),
+      el('p', { class: 'muted small' }, t('Maximum bei dieser Halle: Stufe {n}.', { n: st.max }),
+        which === 'home' && st.missingLevels ? t(' Mit Mauerringen: {n} Ringe bis alles auf Maximum ist (1 Ring = 1 Mauer eine Stufe).', { n: fmtInt.format(st.missingLevels) }) : ''),
+      done ? null : el('ul', { class: 'items' }, st.steps.map((x) => el('li', {},
+        el('span', { class: 'name' }, `${x.from}→${x.to}`, el('span', { class: 'sub' }, t('{n} Mauern × {c}', { n: x.count, c: fmtAmount.format(x.each) }))),
+        el('span', { class: 'time' }, el('b', {}, fmtAmount.format(x.total)), el('span', { class: 'pay' }, x.pay.map((r) => icon(r, 'res-ico'))))))),
+      done ? null : el('dl', { class: 'facts' },
+        Object.entries(st.totals).flatMap(([r, n]) => [el('dt', {}, t('Alles mit {r}', { r: RESOURCES[r]?.[LANG] || r })), el('dd', {}, costEl({ [r]: n }))])),
+      done ? null : el('p', { class: 'muted small' }, Object.keys(st.totals).length > 1 ? t('Beide Ressourcen lassen sich beliebig mischen.') : t('Die unteren Stufen gehen nur mit Gold; ab Stufe {n} auch mit Elixier.', { n: game.items[String(st.id)].alt?.from ?? '–' })),
+      done ? null : el('div', { class: 'wall-calc' },
+        el('h4', {}, t('Was schaffe ich mit meinen Ressourcen?')),
+        el('div', { class: 'row boost' }, res.map(input)),
+        afford && (have[res[0]] || have[res[1]])
+          ? el('p', { class: 'small' }, afford.upgrades
+            ? t('{n} Mauer-Stufen (niedrigste zuerst). Danach: {l}', { n: afford.upgrades, l: afford.byLevel.map((x) => `${x.count}× ${x.level}`).join(' · ') })
+            : t('Reicht noch nicht für die nächste Mauer.'),
+          afford.upgrades ? el('span', { class: 'sub' }, t('Verbraucht: '), costEl(afford.spent)) : null)
+          : null)));
+  }
+  return cards.length ? el('div', { class: 'walls-wrap' }, ...cards) : null;
 }
 
 /** Gear-Ups im Heimatdorf (macht der Meisterbauarbeiter) – mit Stand der Voraussetzungen und Plan-Knopf. */
@@ -659,7 +840,7 @@ function renderBoost(b) {
     ' %');
   return el('section', { class: 'card' },
     el('h3', {}, t('Eigener Rabatt')),
-    el('p', { class: 'muted small' }, t('Z. B. durch Goldpass oder Season-Boost. Wirkt nur auf die Fortschritts-Rechnung, nicht auf laufende Upgrades.')),
+    el('p', { class: 'muted small' }, t('Z. B. durch Goldpass oder Season-Boost. Gilt fürs Heimatdorf – im Fortschritt, im Plan und in der Tagesansicht; laufende Upgrades stehen schon mit echter Restzeit im Export.')),
     el('div', { class: 'row boost' }, input('time', t('Bauzeit −')), input('cost', t('Kosten −'))),
   );
 }
@@ -736,7 +917,7 @@ function renderPlan(r, now) {
   $('plan-count').hidden = !plan.length;
 
   if (!plan.length) {
-    $('plan').replaceChildren(el('section', { class: 'card' },
+    $('plan').replaceChildren(el('section', { class: 'card controls' }, goldPassChips()), el('section', { class: 'card' },
       el('h3', {}, t('Noch nichts geplant')),
       el('p', { class: 'muted' }, t('Im Reiter „Fortschritt“ eine Kategorie aufklappen und beim gewünschten Upgrade auf + tippen. Jedes Tippen plant die nächste Stufe.')),
       el('p', { class: 'muted small' }, t('Der Plan verteilt die Upgrades auf deine Bauarbeiter bzw. das Labor – sobald einer frei wird – und zeigt, wann du welche Ressourcen bereithalten musst.'))));
@@ -795,7 +976,8 @@ function renderPlan(r, now) {
       el('button', { class: 'ghost', onclick: () => { if (confirm(t('Ganzen Plan löschen?'))) { setPlan([]); render(); } } }, t('Plan leeren'))),
   );
 
-  $('plan').replaceChildren(...cards.filter(Boolean), needs);
+  const clash = heroAvailability(village, game, r.running, sim.steps, now, LANG).overlaps.filter((o) => o.planned);
+  $('plan').replaceChildren(el('section', { class: 'card controls' }, goldPassChips()), heroWarning(clash), ...cards.filter(Boolean), needs);
 }
 
 function downloadPlanIcs() {
@@ -926,13 +1108,27 @@ function renderDash(r, now) {
   // ----- Heute zu tun -----
   const todayBucket = daysList.find((b) => b.today) || { entries: [], prepare: {} };
   const todo = [];
+  const dayTimes = { ...DAY, ...readJson(STORE_DAY, {}) };
+  const suggested = new Set();
+  let anySuggestion = false;
   for (const [k, f] of d.free.entries()) {
     const key = `free:${f.group}:${k}`;
+    // nichts geplant → Vorschlag, der zur Tageszeit passt
+    const factor = HOME_GROUPS.has(f.group) ? 1 - boost().time / 100 : 1;
+    const sug = f.next ? null : suggest(candidatesFor(f.group, now), now, factor, dayTimes, suggested);
+    if (sug) { suggested.add(sug.item.id); anySuggestion = true; }
     todo.push(el('li', { class: 'ev free' },
       el('span', { class: 'grow' },
         el('span', { class: 'at' }, t('jetzt')),
         el('span', { class: 'name' }, t('{g}: Platz frei', { g: gname(f.group) }),
-          f.next ? el('span', { class: 'next' }, t('Jetzt starten: {what}', { what: stepText(f.next) })) : el('span', { class: 'next none' }, t('Nichts geplant für diesen Platz')))),
+          f.next ? el('span', { class: 'next' }, t('Jetzt starten: {what}', { what: stepText(f.next) }))
+            : el('span', { class: 'next none' }, t('Nichts geplant für diesen Platz')),
+          sug ? el('span', { class: 'suggest' },
+            t('Vorschlag: {name} {a}→{b} · {d}', { name: sug.item.name, a: sug.item.next.level - 1, b: sug.item.next.level, d: days(sug.seconds) }),
+            el('span', { class: 'sub' }, sug.mode === 'day'
+              ? (sug.fits ? t('fertig {t} – vor dem Schlafengehen, dann gleich nachlegen', { t: when(now + sug.seconds * 1000) }) : t('läuft über Nacht – nichts Kürzeres offen'))
+              : (sug.fits ? t('läuft bis {t} – der Platz arbeitet die ganze Nacht', { t: when(now + sug.seconds * 1000) }) : t('fertig {t} – nichts Längeres offen', { t: when(now + sug.seconds * 1000) }))),
+            el('button', { class: 'ghost small', onclick: () => addToPlan(sug.item) }, t('Einplanen'))) : null)),
       el('span', { class: 'adds' }, planButton(key, f.group)),
       picker(key, f.group, now)));
   }
@@ -958,8 +1154,10 @@ function renderDash(r, now) {
   const cards = [el('section', { class: 'card today' },
     el('div', { class: 'group-head' }, el('h3', {}, t('Heute zu tun')), el('span', { class: 'muted small' }, new Intl.DateTimeFormat(locale(), { weekday: 'long', day: '2-digit', month: '2-digit' }).format(new Date(now)))),
     todo.length ? el('ul', { class: 'items' }, todo) : el('p', { class: 'muted' }, t('Heute steht nichts an.')),
+    anySuggestion ? dayTimesLine(dayTimes) : null,
     Object.keys(todayBucket.prepare).length ? el('p', { class: 'prep-line' }, t('Heute bereitlegen:'), ' ', costEl(todayBucket.prepare)) : null)];
   cards.push(quickBoosts(r, now));
+  cards.push(heroCard(r, now));
 
   if (!d.planned) {
     cards.push(el('section', { class: 'card hint-card' },
@@ -1003,6 +1201,53 @@ function renderDash(r, now) {
 }
 
 /** Schnell-Leiste: die häufigsten Tränke mit einem Tipp eintragen; zeigt, ob gerade einer wirkt. */
+const STORE_DAY = 'planner.day'; // { wake, sleep } – Stunden, für Vorschläge
+
+function dayTimesLine(d) {
+  const sel = (key) => el('select', {
+    class: 'inline', 'aria-label': key === 'wake' ? t('Aufstehen') : t('Schlafengehen'),
+    onchange: (e) => { localStorage.setItem(STORE_DAY, JSON.stringify({ ...d, [key]: Number(e.target.value) })); render(); },
+  }, Array.from({ length: 24 }, (_, h) => el('option', { value: h, selected: h === d[key] }, `${h}:00`)));
+  return el('p', { class: 'muted small day-times' }, t('Vorschläge passend zu deinem Tag: wach von '), sel('wake'), t(' bis '), sel('sleep'), '.');
+}
+
+// ---------- Helden ----------
+
+const heroName = (id) => game.items[String(id)]?.name[LANG] || `#${id}`;
+
+/** Warnung: mehrere Helden gleichzeitig im Ausbau (nur Zeiträume mit geplanten Upgrades). */
+function heroWarning(overlaps) {
+  if (!overlaps.length) return null;
+  return el('section', { class: 'card warn-card' },
+    el('h3', {}, t('Mehrere Helden gleichzeitig im Ausbau')),
+    el('ul', { class: 'items' }, overlaps.map((o) => el('li', {},
+      el('span', { class: 'name' }, o.ids.map(heroName).join(' + '),
+        el('span', { class: 'sub' }, t('{a} bis {b}', { a: when(o.from), b: when(o.to) })))))),
+    el('p', { class: 'muted small' }, t('In dieser Zeit fehlen dir die Helden bei Angriffen und im Clankrieg. Mit ↑/↓ lässt sich ein Helden-Upgrade verschieben.')));
+}
+
+function heroCard(r, now) {
+  const { heroes, overlaps } = heroAvailability(village, game, r.running, lastSim?.steps || [], now, LANG);
+  if (!heroes.length) return null;
+  const allReady = Math.max(...heroes.map((h) => h.readyAt));
+  return el('section', { class: 'card heroes' },
+    el('div', { class: 'group-head' }, el('h3', {}, t('Helden')),
+      el('span', { class: 'muted small' }, allReady <= now ? t('alle bereit') : t('alle bereit {t}', { t: when(allReady) }))),
+    el('ul', { class: 'items' }, heroes.map((h) => {
+      const next = h.busy.find((b) => b.planned && b.from > h.readyAt);
+      return el('li', { class: h.readyAt > now ? 'busy' : 'ready' },
+        el('span', { class: 'grow' },
+          el('span', { class: 'name' }, h.name, el('span', { class: 'lvl' }, ` ${h.level}`),
+            h.readyAt > now
+              ? el('span', { class: 'sub' }, t('im Ausbau → {n}', { n: h.busy.filter((b) => b.to <= h.readyAt).at(-1)?.level ?? h.level + 1 }),
+                h.busy.some((b) => b.planned && b.to <= h.readyAt) ? el('span', { class: 'tag' }, t('geplant')) : null)
+              : null,
+            next ? el('span', { class: 'sub' }, t('nächstes geplant: {t}', { t: when(next.from) })) : null),
+          el('span', { class: 'time' }, el('b', {}, h.readyAt > now ? when(h.readyAt) : t('bereit ✓')))));
+    })),
+    overlaps.length ? el('p', { class: 'warn small' }, t('Achtung: {n}× sind mehrere Helden gleichzeitig im Ausbau – Details im Plan.', { n: overlaps.length })) : null);
+}
+
 const STORE_QUICK = 'planner.quickHidden'; // ausgeblendete Knöpfe der Trank-Leiste
 const quickHidden = () => readJson(STORE_QUICK, []);
 let quickEdit = false;
@@ -1148,3 +1393,8 @@ $('install-close').addEventListener('click', () => { localStorage.setItem(STORE_
   setInterval(render, 30_000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
 })();
+
+// Offline: Seite und Spieldaten zwischenspeichern (sw.js). Nicht auf localhost-Entwicklung angewiesen.
+if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  navigator.serviceWorker.register('sw.js').catch(() => { /* ohne Offline-Modus weiter */ });
+}

@@ -14,7 +14,12 @@ Webseite: Dorf-Export aus Clash of Clans einfügen →
 - 6. Bauarbeiter (B.O.B.): Stand der vier Aufgaben aus den Spieldaten und kürzester Weg dorthin (Gear-Ups, Nachtdorf-Truppe/-Verteidigung, Helden-Summe)
 - Erz-Rechner: glänzendes, glühendes und Sternenerz je Ausrüstung bis zum Maximum oder zur aktuellen Schmied-Stufe
 - Listen sortierbar (Restzeit, schnellste/günstigste nächste Stufe), fertige ein-/ausblendbar, Stufen jedes Exemplars, Mauern in 10er-Schritten planen
-- mehrere Dörfer, Rabatt (Goldpass/Season-Boost) einstellbar
+- mehrere Dörfer (mit eigenem Namen, Rathaus in der Auswahl), Rabatt (Goldpass/Season-Boost) einstellbar – gilt nur fürs Heimatdorf, auch im Plan
+- Mauer-Rechner: Mauern je Stufe, Kosten bis Maximum (Gold/Elixier mischbar ab Stufe 5), Mauerringe, „was schaffe ich mit meinen Ressourcen?“
+- Helden-Verfügbarkeit auf der Startseite; Warnung im Plan, wenn mehrere Helden gleichzeitig im Ausbau sind
+- Verlauf: je Export ein Schnappschuss, Diagramm des Fortschritts je Halle
+- Vorschlag für freie Plätze passend zur Tageszeit (Wach-/Schlafzeit einstellbar)
+- Offline nutzbar (Service Worker `sw.js`, Dateiliste mit `tools/build_sw.py` aktualisieren)
 - Start: „Heute zu tun“ und Tagesansicht der nächsten 7 Tage – was fertig wird, was laut Plan danach startet, was bereitzulegen ist; „+“ an jedem Upgrade plant direkt das nächste (nur, was zu dem Zeitpunkt startbar ist)
 - Supercharges (ab Rathaus 17/18) im Fortschritt; Gear-Ups und Ausrüstung im Plan
 - Helfer an laufenden Upgrades (`helper_timer`) und Goblin-Bauarbeiter (`extra`) aus dem Export berücksichtigt
@@ -34,6 +39,7 @@ npm test                         # Node ≥ 20, keine Abhängigkeiten
 - `src/village.js` – Auswertung des Exports, Fortschritt und Kalender-Erzeugung (ohne DOM, getestet)
 - `src/boosts.js` – Beschleuniger auf laufende Upgrades anwenden (ohne DOM, getestet)
 - `src/bob.js`, `src/ore.js`, `src/magic.js` – 6. Bauarbeiter, Erz-Rechner, Bücher (ohne DOM, getestet)
+- `src/walls.js`, `src/heroes.js`, `src/suggest.js` – Mauer-Rechner, Helden-Verfügbarkeit, Vorschläge (ohne DOM, getestet)
 - `src/planner.js` – Upgrade-Plan: Verteilung auf Bauarbeiter/Labore, Ressourcen-Zeitplan (ohne DOM, getestet)
 - `src/app.js` – Oberfläche
 - `data/game.json` – Namen, Stufen und Bauzeiten aller Spielobjekte

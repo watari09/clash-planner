@@ -318,6 +318,10 @@ def main(sha: str):
                 items[str(gid)]["group"] = group
             if kind == "equipment":
                 items[str(gid)].update(equipment_info(levels, first, items))
+            # zweite Bezahl-Möglichkeit (Mauern: ab Stufe 5 auch Elixier)
+            alt = [(first_level + i, d["AltBuildResource"]) for i, d in enumerate(levels) if d.get("AltBuildResource")]
+            if alt:
+                items[str(gid)]["alt"] = {"from": alt[0][0], "res": alt[0][1]}
             unlock = unlock_hall(kind, first, ids_by_name, items)
             if unlock:
                 items[str(gid)]["unlock"] = unlock
