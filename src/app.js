@@ -4,7 +4,7 @@ import { nextStep, nextEquipStep, gearCandidates, planInstances, simulate, clean
 import { BOOST_TYPES, runningKey } from './boosts.js';
 import { magicItems } from './magic.js';
 import { applyEvents, slotsByGroup as slotsOf } from './state.js';
-import { newId, upload, remove as removeRemote, widgetUrl } from './sync.js';
+import { createSync, widgetUrl } from './sync.js';
 import { bobStatus, TASK_TEXT } from './bob.js';
 import { oreStatus, ORES } from './ore.js';
 import { wallStatus, wallAfford } from './walls.js';
@@ -31,6 +31,7 @@ const historyKey = () => `planner.history.${village?.tag || 'Dorf'}`; // [{ at, 
 const targetKey = () => `planner.target.${village?.tag || 'Dorf'}`; // { home, builder } Ziel-Rathaus/-Meisterhütte
 
 const $ = (id) => document.getElementById(id);
+const sync = createSync(localStorage); // Konto-Abgleich; merkt sich ab jetzt jede Änderung
 let game = null;
 let village = null;
 const openCats = new Set(); // aufgeklappte Kategorien bleiben beim Neuzeichnen offen
@@ -1229,66 +1230,81 @@ function dayTimesLine(d) {
   return el('p', { class: 'muted small day-times' }, t('Vorschläge passend zu deinem Tag: wach von '), sel('wake'), t(' bis '), sel('sleep'), '.');
 }
 
-// ---------- Widget / Server ----------
+// ---------- Konto & Widget ----------
 
-const syncKey = () => `planner.sync.${village?.tag || 'Dorf'}`; // { id, last, at, error }
-let syncTimer = 0;
-
-/** Was das Widget braucht: Export, Boosts, Plan, Plätze, Rabatt, Sprache. */
-function syncBundle() {
-  return {
-    v: 1,
-    lang: LANG,
-    name: readJson(STORE_NAMES, {})[village?.tag] || '',
-    village: villages()[village?.tag || 'Dorf'],
-    boosts: getBoosts(),
-    plan: getPlan(),
-    slots: readJson(STORE_SLOTS, {}),
-    boost: boost(),
-    quickHidden: readJson(STORE_QUICK, []),
-  };
-}
-
-/** Nach jeder Änderung (gebündelt) hochladen – nur wenn eingeschaltet und wirklich etwas anders ist. */
+let pushTimer = 0;
+/** Nach Änderungen (gebündelt) hochladen – nur mit Login. */
 function scheduleSync() {
-  const st = readJson(syncKey(), null);
-  if (!st?.id || !village) return;
-  clearTimeout(syncTimer);
-  syncTimer = setTimeout(async () => {
-    const bundle = syncBundle();
-    const text = JSON.stringify(bundle);
-    const cur = readJson(syncKey(), null);
-    if (!cur?.id || (cur.last === text.length + ':' + hash(text) && !cur.error)) return;
-    try {
-      await upload(cur.id, { ...bundle, at: Date.now() });
-      localStorage.setItem(syncKey(), JSON.stringify({ ...cur, last: text.length + ':' + hash(text), at: Date.now(), error: null }));
-    } catch (e) {
-      localStorage.setItem(syncKey(), JSON.stringify({ ...cur, error: String(e.message || e) }));
-    }
-    document.querySelector('.widget-card')?.replaceWith(widgetCard()); // Status in der Karte auffrischen
+  if (!sync.auth()) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => {
+    sync.push().catch((e) => { if (e.login) loggedOut(); });
   }, 1500);
 }
 
-function hash(text) {
-  let h = 5381;
-  for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) >>> 0;
-  return h.toString(36);
+/** Stand vom Server holen; bei Änderungen neu zeichnen. */
+async function pullAndRender() {
+  if (!sync.auth()) return;
+  try {
+    if (await sync.pull()) select(localStorage.getItem(STORE_CURRENT));
+  } catch (e) {
+    if (e.login) loggedOut();
+  }
+}
+
+function loggedOut() {
+  sync.logout();
+  toast(t('Login ungültig – bitte neu anmelden'));
+  renderAccount();
+}
+
+async function loginWith(code) {
+  try {
+    const me = await sync.login(code.trim());
+    toast(t('Angemeldet als {n}', { n: me.name || '–' }));
+    await sync.push();
+  } catch (e) {
+    showError(e.login ? t('Login-Code ungültig.') : t('Anmeldung fehlgeschlagen – keine Verbindung zum Server.'));
+  }
+  renderAccount();
+  select(localStorage.getItem(STORE_CURRENT));
+}
+
+function renderAccount() {
+  const a = sync.auth();
+  $('account').replaceChildren(a
+    ? el('span', { class: 'acct' }, el('span', { class: 'muted small' }, `👤 ${a.name || t('angemeldet')}`),
+      el('button', {
+        class: 'ghost small',
+        onclick: () => {
+          if (!confirm(t('Auf diesem Gerät abmelden? Deine Daten bleiben im Konto und hier im Browser.'))) return;
+          sync.logout();
+          renderAccount();
+          render();
+        },
+      }, t('Abmelden')))
+    : el('button', {
+      class: 'ghost small',
+      onclick: () => {
+        const code = prompt(t('Login-Code oder Login-Link einfügen:'));
+        if (!code) return;
+        loginWith(code.includes('#login=') ? code.split('#login=')[1] : code);
+      },
+    }, t('Anmelden')));
 }
 
 function widgetCard() {
-  const st = readJson(syncKey(), null);
+  const a = sync.auth();
   const key = 'widget';
-  const body = st?.id
+  const body = a?.widget
     ? (() => {
-      const url = widgetUrl(st.id);
+      const url = widgetUrl(a.widget);
       return [
         el('p', { class: 'small' }, t('Dein Widget-Link (geheim halten – wer ihn hat, sieht dein Dorf):')),
         el('div', { class: 'row link-row' },
           el('input', { type: 'text', readonly: true, value: url, onclick: (e) => e.target.select() }),
           el('button', { class: 'ghost small', onclick: () => { navigator.clipboard?.writeText(url).then(() => toast(t('Link kopiert'))); } }, t('Kopieren'))),
-        el('p', { class: 'muted small' }, st.error
-          ? el('span', { class: 'warn' }, t('Hochladen fehlgeschlagen ({e}) – versuche es beim nächsten Öffnen erneut.', { e: st.error }))
-          : st.at ? t('Zuletzt hochgeladen: {t}. Neue Exporte, Boosts und Plan-Änderungen gehen automatisch mit.', { t: when(st.at) }) : t('Wird hochgeladen …')),
+        el('p', { class: 'muted small' }, t('Zeigt immer den aktuellen Stand deines Kontos – neue Exporte, Boosts und Plan-Änderungen gehen automatisch mit.')),
         el('h4', {}, 'Android'),
         el('ol', { class: 'small steps' },
           el('li', {}, t('App „AnyWidget“ (oder „Widgery“) aus dem Play Store installieren.')),
@@ -1299,35 +1315,17 @@ function widgetCard() {
           el('li', {}, t('App „Web Widget“ oder „Busybody“ aus dem App Store installieren.')),
           el('li', {}, t('Widget hinzufügen und den Link oben einfügen.'))),
         el('p', { class: 'muted small' }, t('Testen: Link im Browser öffnen – so sieht das Widget aus.')),
-        el('button', {
-          class: 'ghost small',
-          onclick: async () => {
-            if (!confirm(t('Widget ausschalten und deine Daten vom Server löschen?'))) return;
-            try { await removeRemote(st.id); } catch { /* offline: läuft nach 60 Tagen ohnehin ab */ }
-            localStorage.removeItem(syncKey());
-            toast(t('Widget ausgeschaltet, Daten gelöscht'));
-            render();
-          },
-        }, t('Ausschalten & Daten löschen')),
       ];
     })()
     : [
       el('p', { class: 'small' }, t('Zeigt freie Bauarbeiter, die nächsten Fertig-Zeiten und den Uhrenturm als Widget auf dem Startbildschirm – über eine kostenlose Widget-App.')),
-      el('p', { class: 'muted small' }, t('Dafür wird dein Stand (Export, eingetragene Boosts, Plan) auf einem kleinen Server gespeichert, unter einer zufälligen geheimen Kennung. Keine Anmeldung, keine Passwörter; du kannst ihn jederzeit löschen, sonst verfällt er 60 Tage nach dem letzten Update.')),
-      el('button', {
-        class: 'primary',
-        onclick: () => {
-          localStorage.setItem(syncKey(), JSON.stringify({ id: newId() }));
-          openCats.add(key);
-          render();
-        },
-      }, t('Widget einrichten')),
+      el('p', { class: 'muted small' }, t('Dafür brauchst du einen Login (oben rechts „Anmelden“). Logins vergibt der Betreiber der Seite.')),
     ];
   return el('details', {
     class: 'card cat widget-card', open: openCats.has(key),
     ontoggle: (e) => { if (e.target.open) openCats.add(key); else openCats.delete(key); },
   },
-    el('summary', {}, el('span', { class: 'name' }, t('Widget für den Startbildschirm')), el('span', { class: 'cat-pct' }, st?.id ? t('an') : t('aus'))),
+    el('summary', {}, el('span', { class: 'name' }, t('Widget für den Startbildschirm')), el('span', { class: 'cat-pct' }, a?.widget ? t('an') : t('aus'))),
     ...body);
 }
 
@@ -1509,9 +1507,18 @@ $('install-close').addEventListener('click', () => { localStorage.setItem(STORE_
   game = await (await fetch('data/game.json')).json();
   $('data-version').textContent = game.version;
   migrate();
-  select(localStorage.getItem(STORE_CURRENT));
+  renderAccount();
+  // Login-Link (…#login=CODE): anmelden und den Code sofort aus der Adresse entfernen
+  const m = location.hash.match(/login=([A-Za-z0-9_-]{20,64})/);
+  if (m) {
+    history.replaceState(null, '', location.pathname + location.search);
+    await loginWith(m[1]);
+  } else {
+    select(localStorage.getItem(STORE_CURRENT));
+    pullAndRender();
+  }
   setInterval(render, 30_000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { render(); pullAndRender(); } });
 })();
 
 // Offline: Seite und Spieldaten zwischenspeichern (sw.js). Nicht auf localhost-Entwicklung angewiesen.

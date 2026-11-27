@@ -20,6 +20,7 @@ Webseite: Dorf-Export aus Clash of Clans einfügen →
 - Verlauf: je Export ein Schnappschuss, Diagramm des Fortschritts je Halle
 - Vorschlag für freie Plätze passend zur Tageszeit (Wach-/Schlafzeit einstellbar)
 - Offline nutzbar (Service Worker `sw.js`, Dateiliste mit `tools/build_sw.py` aktualisieren)
+- Konten (optional): Logins vergibt nur der Betreiber; mit Login werden Dörfer, Plan, Boosts und Einstellungen zwischen Geräten abgeglichen, und es gibt einen festen Widget-Link (`widget.html`) für Web-Widget-Apps
 - Start: „Heute zu tun“ und Tagesansicht der nächsten 7 Tage – was fertig wird, was laut Plan danach startet, was bereitzulegen ist; „+“ an jedem Upgrade plant direkt das nächste (nur, was zu dem Zeitpunkt startbar ist)
 - Supercharges (ab Rathaus 17/18) im Fortschritt; Gear-Ups und Ausrüstung im Plan
 - Helfer an laufenden Upgrades (`helper_timer`) und Goblin-Bauarbeiter (`extra`) aus dem Export berücksichtigt
@@ -68,3 +69,18 @@ python3 tools/update_data.py <sha>
 ---
 
 Dieser Inhalt ist nicht mit Supercell verbunden und wird nicht von Supercell unterstützt, gesponsert oder ausdrücklich genehmigt. Supercell ist nicht für ihn verantwortlich. Weitere Informationen: [Supercells Richtlinie für Fan-Inhalte](https://supercell.com/en/fan-content-policy/).
+
+## Server und Logins
+
+`server/` ist ein Cloudflare Worker mit KV-Speicher (kostenlose Stufe). Veröffentlichen: `cd server && npx wrangler deploy`.
+
+Logins verwalten (braucht `npx wrangler login`):
+
+```bash
+node tools/users.mjs add "Name"     # neuer Login → Login-Link, nur einmal sichtbar
+node tools/users.mjs list
+node tools/users.mjs reset <id>     # neuer Link, alter wird ungültig
+node tools/users.mjs remove <id>    # Login samt Daten löschen
+```
+
+Gespeichert wird je Login nur der SHA-256 des Codes, der Name und die abgeglichenen `planner.*`-Einträge.

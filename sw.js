@@ -18,6 +18,7 @@ const FILES = [
   "src/heroes.js",
   "src/i18n.js",
   "src/magic.js",
+  "src/merge.js",
   "src/ore.js",
   "src/planner.js",
   "src/state.js",

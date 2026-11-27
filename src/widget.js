@@ -5,7 +5,7 @@ import { readVillage, analyze, GROUPS } from './village.js';
 import { simulate } from './planner.js';
 import { dashboard } from './dashboard.js';
 import { applyEvents, slotsByGroup } from './state.js';
-import { download } from './sync.js';
+import { widgetKeys } from './sync.js';
 import { t, setLang, LANG, locale } from './i18n.js';
 
 const $ = (id) => document.getElementById(id);
@@ -80,11 +80,30 @@ function render() {
     el('div', { class: 'row' }, info));
 }
 
+/** Aus den Konto-Einträgen (localStorage-Schlüssel) den Stand des zuletzt angezeigten Dorfs bauen. */
+function fromKeys(keys) {
+  if (!keys) return null;
+  const val = (k, d) => { try { return keys[k]?.v != null ? JSON.parse(keys[k].v) : d; } catch { return d; } };
+  const villages = val('planner.villages', {});
+  const tag = keys['planner.current']?.v && villages[keys['planner.current'].v] ? keys['planner.current'].v : Object.keys(villages)[0];
+  if (!tag) return null;
+  return {
+    lang: keys['planner.lang']?.v,
+    name: val('planner.names', {})[tag] || '',
+    village: villages[tag],
+    boosts: val(`planner.boosts.${tag}`, []),
+    plan: val(`planner.plan.${tag}`, []),
+    slots: val('planner.slots', {}),
+    boost: val('planner.boost', {}),
+    quickHidden: val('planner.quickHidden', []),
+  };
+}
+
 async function load() {
   try {
-    state = await download(id);
+    state = fromKeys(await widgetKeys(id));
     loadedAt = Date.now();
-    if (!state) { $('w').replaceChildren(el('p', { class: 'err' }, t('Kein Stand gefunden – auf der Seite unter „Widget“ einrichten.'))); return; }
+    if (!state) { $('w').replaceChildren(el('p', { class: 'err' }, t('Kein Stand gefunden – auf der Seite anmelden und ein Dorf einfügen.'))); return; }
     if (state.lang) setLang(state.lang);
     render();
   } catch (e) {

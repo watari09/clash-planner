@@ -390,3 +390,7 @@ h1 { background: linear-gradient(90deg, #ffd25a, #ff9f6b 55%, #e86bd8); -webkit-
 .widget-card .link-row { display: flex; gap: 6px; }
 .widget-card .link-row input { flex: 1; min-width: 0; font-size: .8rem; }
 .widget-card h4 { margin: 12px 0 4px; font-size: .9rem; }
+
+/* Konto */
+.head-tools { display: flex; align-items: center; gap: 8px; }
+.acct { display: inline-flex; align-items: center; gap: 6px; }
