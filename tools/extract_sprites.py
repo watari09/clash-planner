@@ -38,7 +38,7 @@ SIZE = 64
 ROTATE = {"builderPotion": -90, "builderBite": -90, "labLicorice": -90, "CommonOre": 270,
           "book-fighting": 270, "book-spells": 270, "book-heroes": 270}
 # Drehung der Buch-Embleme (gegenüber dem Atlas), damit sie aufrecht auf dem Deckel stehen
-EMBLEM_ROTATE = {"book-building": 180}
+EMBLEM_ROTATE = {"book-building": 270}
 
 
 def index(apk):
@@ -99,6 +99,21 @@ def cut(im, pts):
     return out.crop((min(xs), min(ys), max(xs) + 1, max(ys) + 1))
 
 
+def cover_center(book):
+    """Mitte des dunkelroten Buchdeckels (Schwerpunkt seiner Pixel)."""
+    px = book.load()
+    xs, ys = [], []
+    for y in range(book.height):
+        for x in range(book.width):
+            r, g, b, a = px[x, y]
+            if a > 200 and 50 < r < 170 and g < 0.55 * r and b < 0.6 * r:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        return book.width * 0.5, book.height * 0.6
+    return sum(xs) / len(xs), sum(ys) / len(ys)
+
+
 def build(name, im):
     rot = ROTATE.get(name, 0)
     turned = im.rotate(-rot, expand=True) if rot else im
@@ -111,7 +126,8 @@ def build(name, im):
             emblem = emblem.rotate(-EMBLEM_ROTATE[name], expand=True)
         f = 0.45 * book.width / max(emblem.size)
         emblem = emblem.resize((max(1, round(emblem.width * f)), max(1, round(emblem.height * f))), Image.LANCZOS)
-        book.alpha_composite(emblem, (round(0.42 * book.width - emblem.width / 2), round(0.55 * book.height - emblem.height / 2)))
+        cx, cy = cover_center(book)
+        book.alpha_composite(emblem, (round(cx - emblem.width / 2), round(cy - emblem.height / 2)))
         return book
     if "Potion" in name:
         # freistehende Deko-Teile (Funken, Monde) weglassen
