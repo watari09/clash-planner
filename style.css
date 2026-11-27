@@ -383,3 +383,5 @@ h1 { background: linear-gradient(90deg, #ffd25a, #ff9f6b 55%, #e86bd8); -webkit-
 .ev .suggest .sub { display: block; }
 .ev .suggest button { margin-top: 4px; }
 .day-times select { margin: 0 2px; }
+.bob-choice { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.bob-choice select { max-width: 100%; }

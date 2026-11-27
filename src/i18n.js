@@ -269,8 +269,10 @@ export const EN = {
   'Sternlabor zu niedrig': 'Star Laboratory too low',
   'nicht genug umrüstbare Gebäude': 'not enough buildings to gear up',
   '6. Bauarbeiter (B.O.B.)': '6th builder (B.O.B)',
-  'Aufgaben aus den Spieldaten; für jede offene der kürzeste Weg (Helden-Stufen so verteilt, dass sie parallel möglichst schnell fertig werden).':
-    'Tasks from the game data; the shortest path for each open one (hero levels split so they finish as fast as possible in parallel).',
+  'Aufgaben aus den Spieldaten; für jede offene der kürzeste Weg (Helden-Stufen so verteilt, dass sie parallel möglichst schnell fertig werden). Was schon im Plan steht oder für ein Gear-Up nötig ist, zählt mit – bei Verteidigung und Truppe kannst du auch selbst wählen.': 'Tasks from the game data; the fastest way for each open one (hero levels spread so they finish in parallel as fast as possible). What is already planned or needed for a Gear Up counts too – for defense and troop you can also choose yourself.',
+  '(ab Stufe {n} aus dem Plan bzw. für ein Gear-Up)': '(from level {n}, already planned or needed for a Gear Up)',
+  'Welche soll es werden?': 'Which one should it be?',
+  'am schnellsten': 'fastest',
   'Nachtdorf-Bauarbeiter': 'Builder Base builders',
   '{d} mit {n}': '{d} with {n}',
   'Gear-Ups': 'Gear-ups',

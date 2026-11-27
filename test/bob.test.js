@@ -39,3 +39,16 @@ test('Zentrale: Stufen 2–5 kosten zusammen 6,5 Mio. Nachtdorf-Gold', () => {
   assert.equal(s.control.cost.Gold2, 500000 + 1000000 + 2000000 + 3000000);
   assert.ok(s.totals.seconds >= s.totals.labSeconds && s.totals.seconds >= s.totals.gearSeconds);
 });
+
+test('Verteidigung: geplante Stufen zählen mit, eigene Wahl geht vor', () => {
+  const def = (o) => bobStatus(village, game, 'de', o).tasks.find((t) => t.type === 'HighestBuilderDefenceLevel');
+  const fastest = def({}).steps[0];
+  const other = def({}).options.find((o) => o.id !== fastest.id);
+  // eigene Wahl
+  assert.equal(def({ choice: { HighestBuilderDefenceLevel: other.id } }).steps[0].id, other.id);
+  // steht die andere schon bis kurz vor dem Ziel im Plan, gewinnt sie
+  const near = def({ planned: { [other.id]: other.to - 1 } }).steps[0];
+  assert.equal(near.id, other.id);
+  assert.equal(near.from, other.to - 1);
+  assert.equal(near.viaPlan, true);
+});

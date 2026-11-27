@@ -43,7 +43,28 @@ const addCost = (a, b) => { for (const [r, n] of Object.entries(b)) a[r] = (a[r]
  * Stand und kürzester Weg zu B.O.B.
  * @returns {{ control, tasks: [...], totals, blocked }} – je Aufgabe current/target/done und der günstigste Weg.
  */
-export function bobStatus(village, game, lang = 'de') {
+/**
+ * Bester Weg für "eine X auf Stufe N": Optionen mit der Zeit AB der Stufe, die der Plan ohnehin schon erreicht
+ * (was im Plan steht, wird sowieso gebaut). Eigene Wahl (choice = Objekt-ID) geht vor, sonst die schnellste.
+ */
+function pickOption(list, target, cap, planned, choice, name, game) {
+  const options = list.map((x) => {
+    const start = Math.max(x.lvl, Math.min(planned[x.id] || 0, target));
+    const p = path(game.items[String(x.id)], start, target, cap);
+    return p && { id: x.id, name: name(x.id), current: x.lvl, from: start, to: target, viaPlan: start > x.lvl, ...p };
+  }).filter(Boolean);
+  // je Objekt nur das höchste Exemplar
+  const best = new Map();
+  for (const o of options) if (!best.has(o.id) || o.seconds < best.get(o.id).seconds) best.set(o.id, o);
+  const sorted = [...best.values()].sort((a, b) => a.seconds - b.seconds || b.current - a.current);
+  const pick = sorted.find((o) => o.id === choice) || sorted[0];
+  return { pick, options: sorted };
+}
+
+export function bobStatus(village, game, lang = 'de', opts = {}) {
+  // opts.planned: { id: höchste geplante Stufe }, opts.choice: { Aufgabentyp: Objekt-ID }
+  const planned = opts.planned || {};
+  const choice = opts.choice || {};
   const b2 = instances(village.buildings2);
   const bh = Math.max(0, ...b2.filter((x) => x.id === BUILDER_HALL).map((x) => x.lvl));
   const starLabCap = maxLevel(game.items[String(STAR_LAB)], bh);
@@ -58,30 +79,40 @@ export function bobStatus(village, game, lang = 'de') {
   const homeChains = []; // Vorarbeit im Heimatdorf (Heimatdorf-Bauarbeiter)
   const cost = {};
 
-  for (const t of game.bob.tasks) {
+  // Gear-Ups zuerst: deren Nachtdorf-Voraussetzungen (z. B. Multimörser auf 7) werden sowieso gebaut
+  // und zählen für "eine Verteidigung auf Stufe N" schon mit.
+  const gearPlanned = {}; // id → { level, chain }
+  const order = [...game.bob.tasks.keys()].sort((a, b) => (game.bob.tasks[b].type === 'GearUp') - (game.bob.tasks[a].type === 'GearUp'));
+  for (const ti of order) {
+    const t = game.bob.tasks[ti];
     const task = { type: t.type, target: t.target, current: 0, steps: [], blocked: null };
     if (t.type === 'HighestBuilderDefenceLevel') {
       const defs = b2.filter((x) => game.items[String(x.id)]?.group === 'defense');
       task.current = Math.max(0, ...defs.map((x) => x.lvl));
       if (task.current < t.target) {
-        const options = defs.map((x) => ({ x, p: path(game.items[String(x.id)], x.lvl, t.target, bh) })).filter((o) => o.p);
-        const best = options.sort((a, c) => a.p.seconds - c.p.seconds)[0];
-        if (best) {
-          task.steps.push({ id: best.x.id, name: name(best.x.id), from: best.x.lvl, to: t.target, ...best.p });
-          bbChains.push(best.p.seconds);
-          addCost(cost, best.p.cost);
+        const ahead = { ...planned };
+        for (const [id, g] of Object.entries(gearPlanned)) ahead[id] = Math.max(ahead[id] || 0, g.level);
+        const { pick, options } = pickOption(defs, t.target, bh, ahead, choice[t.type], name, game);
+        task.options = options;
+        if (pick) {
+          task.steps.push(pick);
+          // gleiches Gebäude wie eine Gear-Up-Voraussetzung → läuft danach auf demselben Bauarbeiter weiter
+          const g = gearPlanned[pick.id];
+          if (g && pick.seconds) bbChains[g.chain] += pick.seconds;
+          else if (pick.seconds) bbChains.push(pick.seconds);
+          addCost(cost, pick.cost);
         } else task.blocked = 'hall';
       }
     } else if (t.type === 'HighestBuilderTroopLevel') {
       const troops = instances(village.units2);
       task.current = Math.max(0, ...troops.map((x) => x.lvl));
       if (task.current < t.target) {
-        const options = troops.map((x) => ({ x, p: path(game.items[String(x.id)], x.lvl, t.target, starLabCap) })).filter((o) => o.p);
-        const best = options.sort((a, c) => a.p.seconds - c.p.seconds)[0];
-        if (best) {
-          task.steps.push({ id: best.x.id, name: name(best.x.id), from: best.x.lvl, to: t.target, ...best.p });
-          labSeconds += best.p.seconds;
-          addCost(cost, best.p.cost);
+        const { pick, options } = pickOption(troops, t.target, starLabCap, planned, choice[t.type], name, game);
+        task.options = options;
+        if (pick) {
+          task.steps.push(pick);
+          labSeconds += pick.seconds;
+          addCost(cost, pick.cost);
         } else task.blocked = 'lab';
       }
     } else if (t.type === 'TotalBuilderHeroLevels') {
@@ -138,7 +169,10 @@ export function bobStatus(village, game, lang = 'de') {
             c.bbP.seconds ? { id: c.g.requires, name: name(c.g.requires), from: c.reqTop, to: c.g.requiresLevel, ...c.bbP, village: 'builder' } : null,
           ].filter(Boolean),
         });
-        if (c.bbP.seconds) bbChains.push(c.bbP.seconds);
+        if (c.bbP.seconds) {
+          bbChains.push(c.bbP.seconds);
+          gearPlanned[c.g.requires] = { level: Math.max(gearPlanned[c.g.requires]?.level || 0, c.g.requiresLevel), chain: bbChains.length - 1 };
+        }
         gearChains.push(c.g.sec);
         if (c.homeP.seconds) homeChains.push(c.homeP.seconds);
         addCost(cost, c.g.cost ? { [c.g.resource]: c.g.cost } : {});
@@ -148,7 +182,7 @@ export function bobStatus(village, game, lang = 'de') {
       if (task.current + task.steps.length < t.target) task.blocked = 'gear';
     }
     task.done = task.current >= t.target;
-    tasks.push(task);
+    tasks[ti] = task;
   }
 
   // Zentrale bauen bzw. auf Stufe 5 bringen (Stufe n braucht n-1 erledigte Aufgaben)

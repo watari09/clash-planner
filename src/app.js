@@ -779,9 +779,15 @@ function gearList() {
     el('p', { class: 'muted small' }, t('Ein Gear-Up macht der Meisterbauarbeiter – im Plan belegt es einen Nachtdorf-Bauarbeiter.')));
 }
 
+const bobChoiceKey = () => `planner.bobChoice.${village?.tag || 'Dorf'}`; // { Aufgabentyp: Objekt-ID }
+
 function renderBob() {
   if (!village.buildings2?.length) return null;
-  const s = bobStatus(village, game, LANG);
+  // Was im Plan steht, wird sowieso gebaut → zählt für die Aufgaben schon mit
+  const planned = {};
+  for (const e of getPlan()) if (!e.kind) planned[e.id] = Math.max(planned[e.id] || 0, e.to);
+  const choices = readJson(bobChoiceKey(), {});
+  const s = bobStatus(village, game, LANG, { planned, choice: choices });
   if (s.control.unlocked) return null;
   const doneCount = s.tasks.filter((t) => t.done).length;
   const rows = [];
@@ -799,18 +805,37 @@ function renderBob() {
       const main = x.gearUp
         ? t('{name} umrüsten ({d}, {c})', { name: x.name, d: days(x.seconds), c: costText(x.cost) })
         : `${x.name} ${x.from}→${x.to} (${days(x.seconds)})`;
-      return before.length ? t('{main} – vorher {before}', { main, before: before.join(', ') }) : main;
+      const via = x.viaPlan ? ` ${t('(ab Stufe {n} aus dem Plan bzw. für ein Gear-Up)', { n: x.from })}` : '';
+      return (before.length ? t('{main} – vorher {before}', { main, before: before.join(', ') }) : main) + via;
     });
+    // Verteidigung/Truppe: selbst wählen, welche es werden soll
+    const pick = task.steps[0];
+    const chooser = task.options?.length > 1 && !task.done ? el('div', { class: 'bob-choice' },
+      el('select', {
+        class: 'inline', 'aria-label': t('Welche soll es werden?'),
+        onchange: (e) => {
+          const c = readJson(bobChoiceKey(), {});
+          c[task.type] = Number(e.target.value);
+          localStorage.setItem(bobChoiceKey(), JSON.stringify(c));
+          render();
+        },
+      }, task.options.map((o) => el('option', { value: o.id, selected: o.id === pick?.id },
+        `${o.name} ${o.from}→${o.to} · ${days(o.seconds)}${o === task.options[0] ? ` · ${t('am schnellsten')}` : ''}`))),
+      pick?.seconds ? el('button', {
+        class: 'ghost small',
+        onclick: () => addToPlan({ id: pick.id, name: pick.name, to: pick.to, missing: 0 }, pick.to - pick.from, pick.from),
+      }, t('Einplanen')) : null) : null;
     const blocked = { hall: 'Meisterhütte zu niedrig', lab: 'Sternlabor zu niedrig', gear: 'nicht genug umrüstbare Gebäude' }[task.blocked];
     rows.push(el('li', {},
       el('span', { class: 'name' }, `${task.done ? '✓' : '○'} ${label}`,
         steps.map((x) => el('span', { class: 'sub' }, x)),
+        chooser,
         blocked ? el('span', { class: 'sub warn' }, t(blocked)) : null),
       el('span', { class: 'time' }, el('b', {}, `${task.current}/${task.target}`))));
   }
   return el('section', { class: 'card progress' },
     el('div', { class: 'group-head' }, el('h3', {}, t('6. Bauarbeiter (B.O.B.)')), el('span', { class: 'pct' }, `${doneCount}/${s.tasks.length}`)),
-    el('p', { class: 'muted small' }, t('Aufgaben aus den Spieldaten; für jede offene der kürzeste Weg (Helden-Stufen so verteilt, dass sie parallel möglichst schnell fertig werden).')),
+    el('p', { class: 'muted small' }, t('Aufgaben aus den Spieldaten; für jede offene der kürzeste Weg (Helden-Stufen so verteilt, dass sie parallel möglichst schnell fertig werden). Was schon im Plan steht oder für ein Gear-Up nötig ist, zählt mit – bei Verteidigung und Truppe kannst du auch selbst wählen.')),
     el('ul', { class: 'items' }, rows),
     el('dl', { class: 'facts' },
       el('dt', {}, t('Nachtdorf-Bauarbeiter')), el('dd', {}, t('{d} mit {n}', { d: days(s.totals.builderSeconds), n: s.totals.bbBuilders })),
