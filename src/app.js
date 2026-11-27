@@ -779,6 +779,7 @@ function gearList() {
     el('p', { class: 'muted small' }, t('Ein Gear-Up macht der Meisterbauarbeiter – im Plan belegt es einen Nachtdorf-Bauarbeiter.')));
 }
 
+const STORE_BOB_TOWER = 'planner.bobTower'; // Uhrenturm in der B.O.B.-Schätzung (Standard: ja)
 const bobChoiceKey = () => `planner.bobChoice.${village?.tag || 'Dorf'}`; // { Aufgabentyp: Objekt-ID }
 
 function renderBob() {
@@ -787,7 +788,8 @@ function renderBob() {
   const planned = {};
   for (const e of getPlan()) if (!e.kind) planned[e.id] = Math.max(planned[e.id] || 0, e.to);
   const choices = readJson(bobChoiceKey(), {});
-  const s = bobStatus(village, game, LANG, { planned, choice: choices });
+  const useTower = readJson(STORE_BOB_TOWER, true);
+  const s = bobStatus(village, game, LANG, { planned, choice: choices, clockTower: useTower });
   if (s.control.unlocked) return null;
   const doneCount = s.tasks.filter((t) => t.done).length;
   const rows = [];
@@ -843,6 +845,10 @@ function renderBob() {
       el('dt', {}, t('Gear-Ups')), el('dd', {}, days(s.totals.gearSeconds)),
       el('dt', {}, t('Frühestens')), el('dd', {}, el('b', {}, days(s.totals.seconds))),
       el('dt', {}, t('Kosten')), el('dd', {}, costEl(s.totals.cost))),
+    s.totals.clockTower.level ? el('label', { class: 'check' },
+      el('input', { type: 'checkbox', checked: useTower, onchange: (e) => { localStorage.setItem(STORE_BOB_TOWER, JSON.stringify(e.target.checked)); render(); } }),
+      t(' Uhrenturm täglich nutzen (Stufe {n}: Nachtdorf etwa {p} % schneller)', { n: s.totals.clockTower.level, p: Math.round((1 / (useTower ? s.totals.clockTower.factor : bobStatus(village, game, LANG, { planned, choice: choices }).totals.clockTower.factor) - 1) * 100) })) : null,
+    el('p', { class: 'muted small' }, t('Engpass sind meist die Nachtdorf-Helden: ein Held wird nie von zwei Bauarbeitern gleichzeitig ausgebaut. Die Zeiten bei den Aufgaben sind reine Bauzeiten; „Frühestens“ rechnet mit allen Nachtdorf-Bauarbeitern, ab jetzt frei, und dem Uhrenturm.')),
   );
 }
 

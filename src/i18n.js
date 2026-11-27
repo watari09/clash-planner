@@ -273,6 +273,8 @@ export const EN = {
   '(ab Stufe {n} aus dem Plan bzw. für ein Gear-Up)': '(from level {n}, already planned or needed for a Gear Up)',
   'Welche soll es werden?': 'Which one should it be?',
   'am schnellsten': 'fastest',
+  ' Uhrenturm täglich nutzen (Stufe {n}: Nachtdorf etwa {p} % schneller)': ' Use the Clock Tower daily (level {n}: Builder Base about {p}% faster)',
+  'Engpass sind meist die Nachtdorf-Helden: ein Held wird nie von zwei Bauarbeitern gleichzeitig ausgebaut. Die Zeiten bei den Aufgaben sind reine Bauzeiten; „Frühestens“ rechnet mit allen Nachtdorf-Bauarbeitern, ab jetzt frei, und dem Uhrenturm.': 'The bottleneck is usually the Builder Base heroes: a hero is never upgraded by two builders at once. Times next to the tasks are plain build times; "Earliest" uses all Builder Base builders, free from now, and the Clock Tower.',
   'Nachtdorf-Bauarbeiter': 'Builder Base builders',
   '{d} mit {n}': '{d} with {n}',
   'Gear-Ups': 'Gear-ups',

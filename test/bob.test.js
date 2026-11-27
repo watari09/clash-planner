@@ -52,3 +52,14 @@ test('Verteidigung: geplante Stufen zählen mit, eigene Wahl geht vor', () => {
   assert.equal(near.from, other.to - 1);
   assert.equal(near.viaPlan, true);
 });
+
+test('Uhrenturm verkürzt Nachtdorf-Zeiten, nicht die Gear-Ups', () => {
+  const on = bobStatus(village, game);
+  const off = bobStatus(village, game, 'de', { clockTower: false });
+  assert.equal(off.totals.clockTower.factor, 1);
+  if (on.totals.clockTower.level) {
+    assert.ok(on.totals.builderSeconds < off.totals.builderSeconds);
+    assert.ok(on.totals.labSeconds < off.totals.labSeconds);
+    assert.equal(on.totals.gearSeconds, off.totals.gearSeconds);
+  }
+});

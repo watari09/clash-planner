@@ -12,6 +12,7 @@ export const TASK_TEXT = {
 
 const BUILDER_HALL = 1000034;
 const STAR_LAB = 1000046;
+const CLOCK_TOWER = 1000039;
 
 /** Exemplare aus einer Export-Liste; laufende Upgrades zählen als Zielstufe. */
 function instances(list) {
@@ -195,6 +196,19 @@ export function bobStatus(village, game, lang = 'de', opts = {}) {
   }
   addCost(cost, controlCost);
 
+  // Uhrenturm täglich genutzt: je Zyklus (Abklingzeit + Boost) arbeitet das Nachtdorf `sec` lang 10× so schnell.
+  // Gilt für Nachtdorf-Bauarbeiter und Sternlabor, nicht für Gear-Ups (die laufen im Heimatdorf).
+  const towerLevel = Math.max(0, ...b2.filter((x) => x.id === CLOCK_TOWER).map((x) => x.lvl));
+  const tower = game.boosts?.clockTower;
+  let towerFactor = 1;
+  if (opts.clockTower !== false && towerLevel && tower) {
+    const sec = tower.secByLevel[Math.min(towerLevel, tower.secByLevel.length) - 1];
+    const cycle = tower.cooldown + sec;
+    towerFactor = cycle / (cycle + sec * (tower.mult - 1));
+  }
+  for (let i = 0; i < bbChains.length; i++) bbChains[i] *= towerFactor;
+  labSeconds *= towerFactor;
+
   const bbBuilders = Math.max(1, 1 + (b2.some((x) => x.id === 1000078) ? 1 : 0) + (b2.some((x) => x.id === 1000047) ? 1 : 0));
   const gearSeconds = gearChains.reduce((n, s) => n + s, 0);
   const builderSeconds = schedule(gearSeconds ? [...bbChains, gearSeconds] : bbChains, bbBuilders);
@@ -209,6 +223,7 @@ export function bobStatus(village, game, lang = 'de', opts = {}) {
       labSeconds,
       gearSeconds,
       homeSeconds,
+      clockTower: { level: towerLevel, factor: towerFactor, used: towerFactor < 1 },
       seconds: Math.max(builderSeconds, labSeconds, homeSeconds),
       cost,
     },
